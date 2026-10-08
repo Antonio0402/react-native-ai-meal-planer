@@ -9,7 +9,9 @@ import { colors, space } from "../theme";
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [pending, setPending] = useState<"email" | "google" | "apple" | null>(null);
+  const [pending, setPending] = useState<"email" | "google" | "apple" | null>(
+    null,
+  );
   const [error, setError] = useState<string>();
 
   const submit = async () => {
@@ -28,7 +30,11 @@ export default function LoginScreen() {
       });
       if (authError) throw authError;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Không thể đăng nhập. Vui lòng thử lại.");
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Không thể đăng nhập. Vui lòng thử lại.",
+      );
     } finally {
       setPending(null);
     }
@@ -47,19 +53,29 @@ export default function LoginScreen() {
       if (authError) throw authError;
       if (!data.url) throw new Error("Không tạo được liên kết đăng nhập.");
 
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      const result = await WebBrowser.openAuthSessionAsync(
+        data.url,
+        redirectTo,
+      );
       if (result.type !== "success") return;
 
       const callback = new URL(result.url);
-      const providerError = callback.searchParams.get("error_description") ?? callback.searchParams.get("error");
+      const providerError =
+        callback.searchParams.get("error_description") ??
+        callback.searchParams.get("error");
       if (providerError) throw new Error(providerError);
 
       const code = callback.searchParams.get("code");
       if (!code) throw new Error("Không nhận được mã xác thực.");
-      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+      const { error: exchangeError } =
+        await supabase.auth.exchangeCodeForSession(code);
       if (exchangeError) throw exchangeError;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Không thể đăng nhập. Vui lòng thử lại.");
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Không thể đăng nhập. Vui lòng thử lại.",
+      );
     } finally {
       setPending(null);
     }
@@ -100,8 +116,17 @@ export default function LoginScreen() {
           placeholder="••••••••"
           onSubmitEditing={submit}
         />
-        <Button label="Đăng nhập" onPress={submit} loading={pending === "email"} disabled={!!pending} />
-        <Text style={[s.muted, { textAlign: "center", marginVertical: space.md }]}>Hoặc tiếp tục với</Text>
+        <Button
+          label="Đăng nhập"
+          onPress={submit}
+          loading={pending === "email"}
+          disabled={!!pending}
+        />
+        <Text
+          style={[s.muted, { textAlign: "center", marginVertical: space.md }]}
+        >
+          Hoặc tiếp tục với
+        </Text>
         <Button
           label="Google"
           variant="secondary"
@@ -117,7 +142,14 @@ export default function LoginScreen() {
           disabled={!!pending}
           style={{ marginTop: space.sm }}
         />
-        {error ? <Text accessibilityRole="alert" style={[s.error, { marginTop: space.md }]}>{error}</Text> : null}
+        {error ? (
+          <Text
+            accessibilityRole="alert"
+            style={[s.error, { marginTop: space.md }]}
+          >
+            {error}
+          </Text>
+        ) : null}
       </Card>
     </View>
   );

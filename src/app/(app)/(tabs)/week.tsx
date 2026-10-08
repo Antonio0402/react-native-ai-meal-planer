@@ -8,7 +8,11 @@ export default function Week() {
 
   return (
     <ScreenScroll>
-      <WeekTab data={data} setData={setData} onSaved={() => router.navigate("/shopping")} />
+      <WeekTab
+        data={data}
+        setData={setData}
+        onSaved={() => router.navigate("/shopping")}
+      />
     </ScreenScroll>
   );
 }

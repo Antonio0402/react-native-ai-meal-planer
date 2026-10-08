@@ -8,7 +8,11 @@ export default function Inventory() {
 
   return (
     <ScreenScroll>
-      <InventoryTab data={data} setData={setData} onScan={() => router.push("/scan")} />
+      <InventoryTab
+        data={data}
+        setData={setData}
+        onScan={() => router.push("/scan")}
+      />
     </ScreenScroll>
   );
 }

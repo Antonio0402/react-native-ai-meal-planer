@@ -9,7 +9,11 @@ export default function TabLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.muted,
         tabBarHideOnKeyboard: true,
-        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border, height: 56 },
+        tabBarStyle: {
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
+          height: 56,
+        },
         tabBarLabelStyle: { fontFamily: font.semi, fontSize: 14 },
       }}
     >

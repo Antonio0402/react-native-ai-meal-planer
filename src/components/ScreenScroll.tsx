@@ -3,7 +3,11 @@ import { ScrollView } from "react-native";
 import { useIsFocused } from "expo-router";
 import { space } from "../theme";
 
-export default function ScreenScroll({ children }: { children: React.ReactNode }) {
+export default function ScreenScroll({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const focused = useIsFocused();
   if (!focused) return null;
 

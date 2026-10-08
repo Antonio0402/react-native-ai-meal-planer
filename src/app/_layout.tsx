@@ -30,7 +30,8 @@ function Routes() {
       </Text>
     );
   }
-  if (!ready) return <ActivityIndicator style={styles.loading} color={colors.primary} />;
+  if (!ready)
+    return <ActivityIndicator style={styles.loading} color={colors.primary} />;
 
   return (
     <Stack screenOptions={{ headerShown: false }}>

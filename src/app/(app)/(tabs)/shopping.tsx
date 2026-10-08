@@ -8,7 +8,11 @@ export default function Shopping() {
 
   return (
     <ScreenScroll>
-      <ShoppingTab data={data} setData={setData} onGoWeek={() => router.navigate("/week")} />
+      <ShoppingTab
+        data={data}
+        setData={setData}
+        onGoWeek={() => router.navigate("/week")}
+      />
     </ScreenScroll>
   );
 }

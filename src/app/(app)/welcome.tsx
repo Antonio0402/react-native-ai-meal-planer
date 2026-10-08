@@ -17,7 +17,11 @@ export default function Welcome() {
           if (addToInventory(items, scanId)) router.replace("/recipes");
         }}
         onCancel={() => setLandingKey((key) => key + 1)}
-        onSkip={data.inventory.length > 0 ? () => router.replace("/inventory") : undefined}
+        onSkip={
+          data.inventory.length > 0
+            ? () => router.replace("/inventory")
+            : undefined
+        }
       />
     </ScreenScroll>
   );

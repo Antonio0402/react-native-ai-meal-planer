@@ -8,7 +8,13 @@ type AppDataContextValue = ReturnType<typeof useAppData> & {
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
 
-export function AppDataProvider({ userId, children }: { userId: string; children: React.ReactNode }) {
+export function AppDataProvider({
+  userId,
+  children,
+}: {
+  userId: string;
+  children: React.ReactNode;
+}) {
   const appData = useAppData(userId);
   const applied = useRef(new Set<string>());
 
@@ -19,7 +25,9 @@ export function AppDataProvider({ userId, children }: { userId: string; children
       const inventory = [...data.inventory];
       for (const item of items) {
         const index = inventory.findIndex(
-          (current) => current.name.trim().toLowerCase() === item.name.toLowerCase() && current.unit === item.unit
+          (current) =>
+            current.name.trim().toLowerCase() === item.name.toLowerCase() &&
+            current.unit === item.unit,
         );
         if (index >= 0) {
           inventory[index] = {

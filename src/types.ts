@@ -29,7 +29,12 @@ export type RecipeMatch = {
 /** key = `${dayIndex}-${mealIndex}` -> recipeId */
 export type Slots = Record<string, string>;
 
-export type SavedPlan = { weekStart: string; slots: Slots; portions: number; version: number };
+export type SavedPlan = {
+  weekStart: string;
+  slots: Slots;
+  portions: number;
+  version: number;
+};
 
 export type ShoppingItem = {
   key: string;

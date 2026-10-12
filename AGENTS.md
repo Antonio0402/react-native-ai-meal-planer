@@ -55,3 +55,4 @@ Docs: https://docs.expo.dev/eas/index.md
 - Hợp đồng request/response và revision/idempotency nằm trong `FASTAPI_CONTRACT.md`; mẫu cấu hình ở `.env.example`.
 - FastAPI ở `../fast-api` dùng `/api/v1`, lưu snapshot và công thức AI theo tài khoản trong migration `002_app_data.sql`; không seed công thức mẫu khi mock tắt.
 - `npm run test:api` chạy kiểm thử cô lập trong `tests/api.test.cjs`, không gửi token/ảnh thật. Chạy cùng lint và typecheck sau khi đổi hợp đồng API.
+- Scan chuyển HEIC/HEIF sang JPEG trước upload: `expo-image-manipulator` trên native, `heic2any` trên web; chỉ nạp converter khi cần. Backend giữ giới hạn 20 nguyên liệu, lỗi `AI_TIMEOUT`, `AI_RATE_LIMITED`, `AI_OUTPUT_INVALID`; UI không mở xác nhận khi kết quả rỗng và chỉ nhận số lượng hữu hạn không âm.

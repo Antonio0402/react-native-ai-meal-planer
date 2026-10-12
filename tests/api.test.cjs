@@ -7,11 +7,13 @@ const ts = require('typescript');
 const { randomUUID } = require('node:crypto');
 
 // Thực thi source thật với fetch/session/storage giả lập; không gọi mạng thật.
-function environment({ mocking, platform = 'web', apiUrl, fetch: fetchImpl, api, fastTimeout = false } = {}) {
+function environment({ mocking, platform = 'web', apiUrl, fetch: fetchImpl, api, fastTimeout = false, conversionFails = false } = {}) {
   const cache = new Map(), storage = new Map(), calls = [];
+  const conversions = [];
   let session = { access_token: 'fixture-token' };
   let activeRunner;
   const react = {
+    createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
     useState(value) {
       const runner = activeRunner, index = runner.cursor++;
       if (!(index in runner.slots)) runner.slots[index] = typeof value === 'function' ? value() : value;
@@ -51,11 +53,32 @@ function environment({ mocking, platform = 'web', apiUrl, fetch: fetchImpl, api,
     if (api && filename.endsWith(path.join('services', 'api.ts'))) return api;
     const module = { exports: {} }; cache.set(filename, module);
     const source = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
-      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+      fileName: filename,
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React },
     }).outputText;
     const localRequire = name => {
-      if (name === 'react') return react;
+      if (name === 'react') return { ...react, default: react };
       if (name === 'react-native') return { Platform: { OS: platform } };
+      if (name === 'heic2any') return { __esModule: true, default: async options => {
+        conversions.push(options);
+        if (conversionFails) throw Error('codec failed');
+        return new Blob(['converted jpeg'], { type: 'image/jpeg' });
+      } };
+      if (name === 'expo-image-manipulator') return {
+        SaveFormat: { JPEG: 'jpeg' },
+        ImageManipulator: { manipulate(uri) {
+          conversions.push({ uri });
+          return { release() {}, async renderAsync() {
+            if (conversionFails) throw Error('codec failed');
+            return { release() {}, async saveAsync(options) {
+              conversions.push(options); return { uri: 'file:///converted.jpg' };
+            } };
+          } };
+        } },
+      };
+      if (name === 'expo-image-picker') return { launchImageLibraryAsync: async () => ({ canceled: false, assets: [{ uri: 'blob:fixture', file: new File(['fixture'], 'photo.jpg', { type: 'image/jpeg' }) }] }) };
+      if (name === '../components/ui') return { Button: 'Button', Card: 'Card', Field: 'Field', Pill: 'Pill', ConfirmDialog: 'ConfirmDialog', s: {} };
+      if (name === './InventoryTab') return { validExpiry: value => !value };
       if (name === 'expo-crypto') return { randomUUID };
       if (name === '@react-native-async-storage/async-storage') return {
         getItem: async key => storage.get(key) ?? null,
@@ -78,7 +101,7 @@ function environment({ mocking, platform = 'web', apiUrl, fetch: fetchImpl, api,
     };
     runner.render(); return runner;
   }
-  return { load, storage, calls, hook, noSession: () => { session = null; } };
+  return { load, storage, calls, conversions, hook, noSession: () => { session = null; } };
 }
 const json = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
 const currentWeek = environment().load('src/services/meal-utils.ts').weekStartISO();
@@ -197,11 +220,12 @@ test('state khôi phục draft cùng revision và chặn draft xung đột', asy
   const same = environment({ api }); same.storage.set('freshplan.draft.alice', JSON.stringify({ data: { ...base(), portions: 3 }, revision: 2, mutationId: 'cached' }));
   const restored = same.hook(() => same.load('src/state.ts').useAppData('alice')); await settle(); assert.equal(restored.value.data.portions, 3); assert.equal(saves, 1); assert.equal(same.storage.has('freshplan.draft.alice'), false); restored.dispose();
 });
-test('native upload giữ URI và MIME của ảnh HEIC', async () => {
+test('native chuyển HEIC sang JPEG trước khi upload', async () => {
   const env = environment({ platform: 'ios', fetch: () => json([ingredient]) });
   await env.load('src/services/api.ts').detectIngredients('file:///photo.heic', { fileName: 'photo.heic', mimeType: 'image/heic' });
   const [, options] = env.calls[0];
-  assert.deepEqual(plain(options.body.get('file')), { uri: 'file:///photo.heic', name: 'photo.heic', type: 'image/heic' });
+  assert.deepEqual(plain(options.body.get('file')), { uri: 'file:///converted.jpg', name: 'photo.jpg', type: 'image/jpeg' });
+  assert.deepEqual(plain(env.conversions), [{ uri: 'file:///photo.heic' }, { format: 'jpeg', compress: 0.8 }]);
   assert.equal(options.headers.get('Content-Type'), null);
 });
 test('HTTP timeout và hủy request không chuyển sang dữ liệu mock', async () => {
@@ -228,4 +252,95 @@ test('khôi phục thay đổi mới sau PUT đã thành công nhưng mất resp
   env.storage.set('freshplan.draft.alice', JSON.stringify({ data: saved, pending: latest, revision: 0, mutationId: 'previous' }));
   const runner = env.hook(() => env.load('src/state.ts').useAppData('alice')); await settle();
   assert.equal(runner.value.data.portions, 4); assert.equal(calls.length, 1); assert.equal(calls[0][2], 1); assert.notEqual(calls[0][3], 'previous'); runner.dispose();
+});
+
+for (const extension of ['heic', 'HEIF']) {
+  test('native chuyển định dạng theo đuôi tệp khi thiếu MIME: ' + extension, async () => {
+    const env = environment({ platform: 'ios', fetch: () => json([ingredient]) });
+    await env.load('src/services/api.ts').detectIngredients('file:///photo.' + extension);
+    assert.equal(env.calls[0][1].body.get('file').type, 'image/jpeg');
+    assert.equal(env.calls[0][1].body.get('file').uri, 'file:///converted.jpg');
+    assert.equal(env.conversions.length, 2);
+  });
+  test('web gửi JPEG đã chuyển từ ' + extension, async () => {
+    const env = environment({ fetch: () => json([ingredient]) });
+    const file = new File(['heic fixture'], 'photo.' + extension, { type: 'image/' + extension.toLowerCase() });
+    await env.load('src/services/api.ts').detectIngredients('blob:fixture', { file });
+    const upload = env.calls[0][1].body.get('file');
+    assert.equal(upload.name, 'photo.jpg'); assert.equal(upload.type, 'image/jpeg');
+    assert.equal(await upload.text(), 'converted jpeg');
+    assert.equal(env.conversions[0].blob, file);
+  });
+}
+
+test('web giữ JPEG mà picker đã chuyển dù tên gốc là HEIC', async () => {
+  const env = environment({ fetch: () => json([ingredient]) });
+  await env.load('src/services/api.ts').detectIngredients('blob:fixture', {
+    file: new File(['jpeg fixture'], 'photo.heic', { type: 'image/jpeg' }),
+  });
+  assert.equal(env.conversions.length, 0);
+  assert.equal(env.calls[0][1].body.get('file').name, 'photo.jpg');
+});
+
+for (const platform of ['web', 'ios']) {
+  test('lỗi chuyển ảnh không upload HEIC gốc: ' + platform, async () => {
+    const env = environment({ platform, conversionFails: true });
+    const api = env.load('src/services/api.ts');
+    await assert.rejects(api.detectIngredients('file:///photo.heic', {
+      file: new File(['fixture'], 'photo.heic', { type: 'image/heic' }), mimeType: 'image/heic',
+    }), /Không chuyển được ảnh/);
+    assert.equal(env.calls.length, 0);
+  });
+}
+
+for (const [code, status, kind, message] of [
+  ['AI_TIMEOUT', 504, 'timeout', 'quá lâu'],
+  ['AI_RATE_LIMITED', 429, 'unknown', 'quá tải'],
+  ['AI_OUTPUT_INVALID', 502, 'unknown', 'không hợp lệ'],
+  ['AI_CONFIG_ERROR', 503, 'unknown', 'chưa được cấu hình'],
+]) {
+  test('nhận diện giữ mã lỗi Gemini: ' + code, async () => {
+    const env = environment({ fetch: () => json({ detail: { code, message: 'private provider error' } }, status) });
+    const api = env.load('src/services/api.ts');
+    await assert.rejects(api.detectIngredients('blob:fixture', { file: new File(['x'], 'photo.jpg') }),
+      error => error instanceof api.DetectError && error.kind === kind && error.message.includes(message) && !error.message.includes('private'));
+  });
+}
+
+function element(tree, type, predicate) {
+  if (!tree || typeof tree !== 'object') return undefined;
+  if (Array.isArray(tree)) return tree.map(child => element(child, type, predicate)).find(Boolean);
+  if (tree.type === type && predicate(tree.props)) return tree;
+  return element(tree.props?.children, type, predicate);
+}
+
+test('ScanFlow kết quả rỗng hiện lỗi và đường nhập tay', async () => {
+  const env = environment({ fetch: () => json([]) });
+  const ScanFlow = env.load('src/screens/ScanFlow.tsx').default;
+  const runner = env.hook(() => ScanFlow({ onConfirm() {}, onCancel() {} }));
+  await element(runner.value, 'Button', p => p.label === 'Chọn từ thư viện').props.onPress();
+  await settle();
+  assert(element(runner.value, 'Pill', p => p.text.includes('Không nhận diện được nguyên liệu')));
+  assert(!element(runner.value, 'Button', p => p.label === 'Xác nhận & lưu vào kho'));
+  assert(!element(runner.value, 'Button', p => p.label === 'Thử lại'));
+  element(runner.value, 'Button', p => p.label === 'Nhập tay').props.onPress();
+  await settle();
+  assert(element(runner.value, 'Field', p => p.label === 'Tên'));
+  runner.dispose();
+});
+
+test('ScanFlow từ chối số lượng vô hạn, NaN, âm; vẫn nhận số thập phân', async () => {
+  const saved = [], env = environment();
+  const ScanFlow = env.load('src/screens/ScanFlow.tsx').default;
+  const runner = env.hook(() => ScanFlow({ onConfirm: items => saved.push(items), onCancel() {} }));
+  element(runner.value, 'Button', p => p.label === 'Nhập tay').props.onPress(); await settle();
+  element(runner.value, 'Field', p => p.label === 'Tên').props.onChangeText('Trứng'); await settle();
+  for (const value of ['Infinity', '1e999', 'NaN', '-1']) {
+    element(runner.value, 'Field', p => p.label === 'Số lượng').props.onChangeText(value); await settle();
+    element(runner.value, 'Button', p => p.label === 'Xác nhận & lưu vào kho').props.onPress(); await settle();
+    assert.equal(saved.length, 0); assert(element(runner.value, 'Field', p => p.label === 'Số lượng' && p.error));
+  }
+  element(runner.value, 'Field', p => p.label === 'Số lượng').props.onChangeText('1,5'); await settle();
+  element(runner.value, 'Button', p => p.label === 'Xác nhận & lưu vào kho').props.onPress();
+  assert.equal(saved[0][0].quantity, 1.5); runner.dispose();
 });

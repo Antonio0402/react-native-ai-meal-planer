@@ -71,9 +71,11 @@ Lỗi dùng status phù hợp (401, 403, 409/412, 413, 422, 5xx), body:
 { "detail": { "code": "blurry", "message": "Ảnh chưa đủ rõ." } }
 ```
 
-`code` là `blurry`, `timeout` hoặc mã lỗi riêng. Client chỉ hiển thị thông báo an toàn đã định nghĩa, không hiển thị trace/backend secret. Request HTTP timeout sau 60 giây. Không tự retry POST/PUT ngoài thao tác thử lại rõ ràng của người dùng.
+Scan trả `blurry` (422), `AI_RATE_LIMITED` (429), `AI_TIMEOUT` (504), `AI_OUTPUT_INVALID` (502), `AI_CONFIG_ERROR` hoặc `AI_PROVIDER_UNAVAILABLE` (503). Client ánh xạ `AI_TIMEOUT` và timeout HTTP thành loại lỗi UI `timeout`; chỉ hiển thị thông báo an toàn đã định nghĩa, không hiển thị trace/backend secret. Request HTTP timeout sau 60 giây. Không tự retry POST/PUT ngoài thao tác thử lại rõ ràng của người dùng.
 
 Backend phải giới hạn kích thước ảnh, kiểm tra nội dung/MIME thực, chỉ nhận định dạng hỗ trợ và không xem URI cục bộ như URL tải ảnh. App gửi `File/Blob` trên web, tệp URI multipart trên native. Không lưu/phân tích ảnh bằng API key ở client.
+
+App chuyển HEIC/HEIF sang JPEG trước khi upload, đồng thời cập nhật tên tệp, URI và MIME. Native dùng `expo-image-manipulator`; web dùng `heic2any`, nạp khi cần. Nếu chuyển đổi thất bại, không gửi ảnh gốc. Backend chỉ nhận JPEG/PNG/WebP tối đa 5 MB. Gemini nhận schema tối đa 20 nguyên liệu và chỉ gợi ý tên/confidence. Response rỗng (kể cả `no_food`) được UI hiển thị thông báo chụp lại/nhập tay, không mở xác nhận trống. Số lượng do người dùng nhập phải hữu hạn và không âm.
 
 CORS phải cho phép origin web dev thực tế, methods GET/POST/PUT và headers `Authorization`, `Content-Type`, `If-Match`, `Idempotency-Key`. Không redirect các endpoint; client yêu cầu `redirect: error`.
 

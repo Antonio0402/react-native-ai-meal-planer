@@ -27,7 +27,7 @@ export {
 
 export class DetectError extends Error {
   constructor(
-    public kind: "blurry" | "timeout" | "unknown",
+    public kind: "blurry" | "timeout" | "no_food" | "unknown",
     message: string,
   ) {
     super(message);
@@ -68,16 +68,40 @@ export async function detectIngredients(
   }
   try {
     const form = new FormData();
-    const name =
+    let name =
       image?.fileName ||
+      image?.file?.name ||
       imageUri.split("/").pop()?.split("?")[0] ||
       "photo.jpg";
+    const extension = name.split(".").pop()?.toLowerCase();
+    const needsJpeg = (mime?: string) =>
+      /^image\/hei[cf](?:-sequence)?$/i.test(mime ?? "") ||
+      extension === "heic" || extension === "heif";
+    const jpegName = () => name.replace(/\.[^.]*$/, "") + ".jpg";
     if (Platform.OS === "web") {
-      const file = image?.file ?? (await (await fetch(imageUri)).blob());
+      let file: Blob = image?.file ?? (await (await fetch(imageUri)).blob());
+      if (needsJpeg(image?.mimeType) || needsJpeg(file.type)) {
+        try {
+          // Một số picker đã chuyển ảnh sang JPEG nhưng giữ tên HEIC gốc.
+          if (file.type !== "image/jpeg") {
+            const { default: heic2any } = await import("heic2any");
+            const converted = await heic2any({
+              blob: file,
+              toType: "image/jpeg",
+              quality: 0.8,
+            });
+            file = Array.isArray(converted) ? converted[0] : converted;
+          }
+          if (!file || file.type !== "image/jpeg") throw new Error();
+          name = jpegName();
+        } catch {
+          throw new DetectError("unknown", "Không chuyển được ảnh HEIC/HEIF. Hãy chọn ảnh JPEG, PNG hoặc WebP.");
+        }
+      }
       form.append("file", file, name);
     } else {
-      const extension = name.split(".").pop()?.toLowerCase();
-      const mime =
+      let uploadUri = imageUri;
+      let mime =
         image?.mimeType ||
         (
           {
@@ -88,9 +112,30 @@ export async function detectIngredients(
           } as Record<string, string>
         )[extension ?? ""] ||
         "image/jpeg";
+      if (needsJpeg(mime)) {
+        try {
+          const { ImageManipulator, SaveFormat } = await import("expo-image-manipulator");
+          const context = ImageManipulator.manipulate(imageUri);
+          try {
+            const rendered = await context.renderAsync();
+            try {
+              const converted = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.8 });
+              uploadUri = converted.uri;
+            } finally {
+              rendered.release();
+            }
+          } finally {
+            context.release();
+          }
+          name = jpegName();
+          mime = "image/jpeg";
+        } catch {
+          throw new DetectError("unknown", "Không chuyển được ảnh HEIC/HEIF. Hãy chọn ảnh JPEG, PNG hoặc WebP.");
+        }
+      }
       // React Native FormData nhận tệp cục bộ qua URI; kiểu DOM chỉ khai báo Blob.
       form.append("file", {
-        uri: imageUri,
+        uri: uploadUri,
         name,
         type: mime,
       } as unknown as Blob);
@@ -100,18 +145,27 @@ export async function detectIngredients(
       body: form,
     });
   } catch (error) {
+    if (error instanceof DetectError) throw error;
+    const code = error instanceof ApiError ? error.code : undefined;
     const kind =
-      error instanceof ApiError &&
-      (error.code === "blurry" || error.code === "timeout")
-        ? error.code
-        : "unknown";
+      code === "blurry" || code === "IMAGE_BLURRY"
+        ? "blurry"
+        : code === "timeout" || code === "AI_TIMEOUT"
+          ? "timeout"
+          : "unknown";
+    const messages: Record<string, string> = {
+      AI_RATE_LIMITED: "Dịch vụ nhận diện đang quá tải. Vui lòng thử lại sau.",
+      AI_OUTPUT_INVALID: "AI trả về kết quả không hợp lệ. Vui lòng thử lại.",
+      AI_CONFIG_ERROR: "Dịch vụ nhận diện chưa được cấu hình.",
+      AI_PROVIDER_UNAVAILABLE: "Dịch vụ nhận diện tạm thời không khả dụng.",
+    };
     throw new DetectError(
       kind,
       kind === "blurry"
         ? "Ảnh bị mờ. Hãy chụp lại gần và đủ sáng hơn."
-        : error instanceof Error
-          ? error.message
-          : "Phân tích thất bại.",
+        : kind === "timeout"
+          ? "Nhận diện ảnh quá lâu. Vui lòng thử lại."
+          : (code && messages[code]) || (error instanceof Error ? error.message : "Phân tích thất bại."),
     );
   }
 }

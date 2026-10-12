@@ -37,6 +37,16 @@ const ingredient = (v: unknown): v is Ingredient =>
   optional(v.expiry, text);
 export const ingredients = (v: unknown): v is Ingredient[] =>
   list(ingredient)(v) && uniqueIds(v);
+export const scanCandidates = (v: unknown): v is Ingredient[] =>
+  list(
+    (item): item is Ingredient =>
+      object(item) &&
+      text(item.id) &&
+      text(item.name) &&
+      typeof item.unit === "string" &&
+      optional(item.quantity, number) &&
+      optional(item.expiry, text),
+  )(v) && uniqueIds(v);
 const recipeItem = (v: unknown): v is RecipeItem =>
   object(v) &&
   text(v.name) &&

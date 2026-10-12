@@ -53,4 +53,5 @@ Docs: https://docs.expo.dev/eas/index.md
 - `src/services/mock-api.ts` chứa dữ liệu mẫu; `meal-utils.ts` chứa helper thuần; `src/hooks/useApiQuery.ts` hủy request cũ và hỗ trợ retry.
 - `src/state.ts` đọc/lưu tài khoản qua FastAPI, tuần tự hóa PUT và giữ bản nháp AsyncStorage theo tài khoản khi lỗi.
 - Hợp đồng request/response và revision/idempotency nằm trong `FASTAPI_CONTRACT.md`; mẫu cấu hình ở `.env.example`.
+- FastAPI ở `../fast-api` dùng `/api/v1`, lưu snapshot và công thức AI theo tài khoản trong migration `002_app_data.sql`; không seed công thức mẫu khi mock tắt.
 - `npm run test:api` chạy kiểm thử cô lập trong `tests/api.test.cjs`, không gửi token/ảnh thật. Chạy cùng lint và typecheck sau khi đổi hợp đồng API.

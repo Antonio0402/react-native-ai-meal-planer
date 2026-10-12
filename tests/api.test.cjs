@@ -111,7 +111,7 @@ test('mock không cần mạng; giữ thuật toán gợi ý/tuần/đi chợ', 
 test('POST match gửi kho/khẩu phần/dị ứng thật', async () => {
   const env = environment({ fetch: () => json([]) });
   await env.load('src/services/api.ts').matchRecipes([ingredient], 3, ['sữa']);
-  const [url, options] = env.calls[0]; assert.equal(url, 'http://127.0.0.1:8000/recipes/match');
+  const [url, options] = env.calls[0]; assert.equal(url, 'http://127.0.0.1:8000/api/v1/recipes/match');
   assert.deepEqual(JSON.parse(options.body), { inventory: [ingredient], portions: 3, allergies: ['sữa'] });
 });
 test('PUT dữ liệu dùng revision và idempotency, không gửi userId trong body', async () => {
@@ -126,6 +126,14 @@ test('web upload file thật, không đặt multipart Content-Type thủ công',
   await env.load('src/services/api.ts').detectIngredients('blob:fixture', { file: new File(['photo'], 'photo.png', { type: 'image/png' }), fileName: 'photo.png', mimeType: 'image/png' });
   const [, options] = env.calls[0]; assert.equal(options.body.get('file').name, 'photo.png');
   assert.equal(await options.body.get('file').text(), 'photo'); assert.equal(options.headers.get('Content-Type'), null);
+});
+test('nhận diện ảnh giữ đơn vị trống để người dùng xác nhận', async () => {
+  const env = environment({ fetch: () => json([{ id: 'scan-1', name: 'Cà chua', unit: '' }]) });
+  const found = await env.load('src/services/api.ts').detectIngredients('blob:fixture', {
+    file: new File(['photo'], 'photo.png', { type: 'image/png' }), fileName: 'photo.png', mimeType: 'image/png'
+  });
+  assert.equal(found[0].unit, '');
+  assert.equal(found[0].quantity, undefined);
 });
 test('response sai bị từ chối, không dùng mock khi backend lỗi', async () => {
   const env = environment({ fetch: () => json([{ id: 'bad' }]) });

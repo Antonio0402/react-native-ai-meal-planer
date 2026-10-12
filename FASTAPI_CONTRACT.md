@@ -1,6 +1,6 @@
 # Hợp đồng FastAPI của FreshPlan
 
-Chưa có backend trong repository. Tài liệu này là hợp đồng mà FastAPI cần triển khai để app chạy khi `EXPO_PUBLIC_IS_MOCKING` không bằng `true`.
+Backend nằm trong `../fast-api`. App dùng các route `/api/v1` của backend khi `EXPO_PUBLIC_IS_MOCKING` không bằng `true`.
 
 ## Cấu hình app
 
@@ -23,20 +23,20 @@ JSON dùng camelCase theo `src/types.ts`; các field tùy chọn phải được
 
 | Method | Path | Request | Response thành công |
 | --- | --- | --- | --- |
-| GET | `/recipes` | Query `allergies` lặp lại, tùy chọn | `Recipe[]` |
-| POST | `/ingredients/detect` | Multipart, field `file` chứa tệp ảnh | `Ingredient[]` |
-| POST | `/recipes/match` | `{ inventory: Ingredient[], portions: number, allergies: string[] }` | `RecipeMatch[]` |
-| POST | `/plans/generate` | `{ allergies: string[], portions: number, weekStart?: string }` | `Slots` đủ 21 bữa |
-| POST | `/shopping/build` | `{ plan: SavedPlan, inventory: Ingredient[] }` | `ShoppingItem[]` |
-| GET | `/me/data` | Không body | `{ data: AppData, revision: number }` |
-| PUT | `/me/data` | Body `AppData`; header `If-Match` và `Idempotency-Key` | `{ data: AppData, revision: number }` |
+| POST | `/api/v1/recipes/generated` | `{ inventory, allergies }` | `Recipe[]` do AI tạo từ kho đã xác nhận |
+| POST | `/api/v1/scan-jobs/detect` | Multipart, field `file` chứa tệp ảnh | `Ingredient[]` để người dùng xác nhận |
+| POST | `/api/v1/recipes/match` | `{ inventory, portions, allergies }` | `RecipeMatch[]` |
+| POST | `/api/v1/weekly-plans/generate-from-inventory` | `{ inventory, allergies, portions, weekStart? }` | `Slots` đủ 21 bữa |
+| POST | `/api/v1/weekly-plans/shopping/build` | `{ plan, inventory }` | `ShoppingItem[]` |
+| GET | `/api/v1/users/me/data` | Không body | `{ data: AppData, revision: number }` |
+| PUT | `/api/v1/users/me/data` | Body `AppData`; header `If-Match` và `Idempotency-Key` | `{ data: AppData, revision: number }` |
 
 Response là array/object trực tiếp, không thêm wrapper `items` hay `success`. Tất cả response thành công có body JSON; không trả 204.
 
 - `Ingredient`: `{ id, name, unit, quantity?, expiry? }`. `quantity` chưa rõ thì bỏ field; không tự đoán lượng từ ảnh. `expiry` theo `DD/MM/YYYY` nếu có. ID phải duy nhất trong kho.
 - `Recipe`: `{ id, title, minutes, servings, items: RecipeItem[], steps: string[] }`. `RecipeItem`: `{ name, quantity, unit }`; lượng dương, đơn vị không rỗng.
 - `RecipeMatch`: `{ recipe, servings, items, missing, coverage }`. `missing` là `RecipeItem[]` kèm `check?: boolean`; `coverage` trong `[0,1]`. Sắp xếp coverage giảm dần. Chỉ dùng kho đã xác nhận, loại món không an toàn theo dị ứng; thành phần không rõ không được coi là an toàn.
-- `Slots`: object có key `dayIndex-mealIndex`, ngày `0..6`, bữa `0..2`; value là ID công thức hợp lệ. Lập tuần trả đủ 21 key, không tham chiếu món mẫu ngoài catalog.
+- `Slots`: object có key `dayIndex-mealIndex`, ngày `0..6`, bữa `0..2`; value là ID công thức AI đã lưu cho tài khoản. Lập tuần trả đủ 21 key, không tham chiếu món mẫu.
 - `SavedPlan`: `{ weekStart, slots, portions, version }`, `weekStart` theo `YYYY-MM-DD`, `version` nguyên dương. Khẩu phần trong `1..12`.
 - `ShoppingItem`: `{ key, name, unit, toBuy, group, check }`; `check` luôn là boolean. Tính `max(0, tổng cần − tồn đã xác nhận)`, chỉ đổi đơn vị cùng chiều (`kg/g`, `l/ml`), không đổi đồ đếm sang khối lượng. Lượng tồn chưa rõ/khác chiều phải gắn `check`.
 - `AppData`: `{ inventory, portions, allergies, weekStart, slots, savedPlan?, checked }`. `checked` là object key → boolean. Lưu/xóa kho, đổi hồ sơ, sửa thực đơn, lưu kế hoạch và đánh dấu đi chợ đều đi qua PUT này.
@@ -71,12 +71,14 @@ Lỗi dùng status phù hợp (401, 403, 409/412, 413, 422, 5xx), body:
 { "detail": { "code": "blurry", "message": "Ảnh chưa đủ rõ." } }
 ```
 
-`code` là `blurry`, `timeout` hoặc mã lỗi riêng. Client chỉ hiển thị thông báo an toàn đã định nghĩa, không hiển thị trace/backend secret. Request HTTP timeout sau 60 giây. Không tự retry POST/PUT ngoài thao tác thử lại rõ ràng của người dùng.
+Scan trả `blurry` (422), `AI_RATE_LIMITED` (429), `AI_TIMEOUT` (504), `AI_OUTPUT_INVALID` (502), `AI_CONFIG_ERROR` hoặc `AI_PROVIDER_UNAVAILABLE` (503). Client ánh xạ `AI_TIMEOUT` và timeout HTTP thành loại lỗi UI `timeout`; chỉ hiển thị thông báo an toàn đã định nghĩa, không hiển thị trace/backend secret. Request HTTP timeout sau 60 giây. Không tự retry POST/PUT ngoài thao tác thử lại rõ ràng của người dùng.
 
 Backend phải giới hạn kích thước ảnh, kiểm tra nội dung/MIME thực, chỉ nhận định dạng hỗ trợ và không xem URI cục bộ như URL tải ảnh. App gửi `File/Blob` trên web, tệp URI multipart trên native. Không lưu/phân tích ảnh bằng API key ở client.
+
+App chuyển HEIC/HEIF sang JPEG trước khi upload, đồng thời cập nhật tên tệp, URI và MIME. Native dùng `expo-image-manipulator`; web dùng `heic2any`, nạp khi cần. Nếu chuyển đổi thất bại, không gửi ảnh gốc. Backend chỉ nhận JPEG/PNG/WebP tối đa 5 MB. Gemini nhận schema tối đa 20 nguyên liệu và chỉ gợi ý tên/confidence. Response rỗng (kể cả `no_food`) được UI hiển thị thông báo chụp lại/nhập tay, không mở xác nhận trống. Số lượng do người dùng nhập phải hữu hạn và không âm.
 
 CORS phải cho phép origin web dev thực tế, methods GET/POST/PUT và headers `Authorization`, `Content-Type`, `If-Match`, `Idempotency-Key`. Không redirect các endpoint; client yêu cầu `redirect: error`.
 
 ## Kiểm tra
 
-`npm run test:api` kiểm tra mock gating, hợp đồng request/response, upload ảnh, lỗi và đồng bộ bằng fetch/storage giả lập, không gửi dữ liệu thật. Chạy thêm `npm run lint` và `node node_modules/typescript/bin/tsc --noEmit`. Cần triển khai FastAPI theo hợp đồng này và kiểm tra thiết bị thật trước khi xác nhận tích hợp live.
+`npm run test:api` kiểm tra mock gating, hợp đồng request/response, upload ảnh, lỗi và đồng bộ bằng fetch/storage giả lập, không gửi dữ liệu thật. Chạy thêm `npm run lint` và `node node_modules/typescript/bin/tsc --noEmit`. Backend cần `DATABASE_URL`, `SUPABASE_URL`, `GEMINI_API_KEY` trong `fast-api/.env`; kiểm tra thiết bị thật trước khi xác nhận tích hợp live.

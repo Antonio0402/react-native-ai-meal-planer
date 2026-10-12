@@ -9,8 +9,9 @@ import type {
   ShoppingItem,
   Slots,
 } from "../types";
-import { ApiError, IS_MOCKING, request, API_URL } from "./http";
+import { ApiError, IS_MOCKING, request } from "./http";
 import * as schema from "./api-schema";
+export { ApiError, IS_MOCKING } from "./http";
 export {
   DAYS,
   MEALS,
@@ -26,7 +27,7 @@ export {
 
 export class DetectError extends Error {
   constructor(
-    public kind: "blurry" | "timeout" | "unknown",
+    public kind: "blurry" | "timeout" | "no_food" | "unknown",
     message: string,
   ) {
     super(message);
@@ -40,14 +41,13 @@ const mock = () => import("./mock-api");
 export async function getRecipes(
   allergies: string[] = [],
   signal?: AbortSignal,
+  inventory: Ingredient[] = [],
 ): Promise<Recipe[]> {
   if (IS_MOCKING) return (await mock()).safeRecipes(allergies);
-  const query = new URLSearchParams();
-  allergies.forEach((a) => query.append("allergies", a));
   return request(
-    "/recipes" + (query.toString() ? "?" + query.toString() : ""),
+    "/api/v1/recipes/generated",
     schema.recipes,
-    { signal },
+    { method: "POST", body: JSON.stringify({ inventory, allergies }), signal },
   );
 }
 
@@ -68,16 +68,40 @@ export async function detectIngredients(
   }
   try {
     const form = new FormData();
-    const name =
+    let name =
       image?.fileName ||
+      image?.file?.name ||
       imageUri.split("/").pop()?.split("?")[0] ||
       "photo.jpg";
+    const extension = name.split(".").pop()?.toLowerCase();
+    const needsJpeg = (mime?: string) =>
+      /^image\/hei[cf](?:-sequence)?$/i.test(mime ?? "") ||
+      extension === "heic" || extension === "heif";
+    const jpegName = () => name.replace(/\.[^.]*$/, "") + ".jpg";
     if (Platform.OS === "web") {
-      const file = image?.file ?? (await (await fetch(imageUri)).blob());
+      let file: Blob = image?.file ?? (await (await fetch(imageUri)).blob());
+      if (needsJpeg(image?.mimeType) || needsJpeg(file.type)) {
+        try {
+          // Một số picker đã chuyển ảnh sang JPEG nhưng giữ tên HEIC gốc.
+          if (file.type !== "image/jpeg") {
+            const { default: heic2any } = await import("heic2any");
+            const converted = await heic2any({
+              blob: file,
+              toType: "image/jpeg",
+              quality: 0.8,
+            });
+            file = Array.isArray(converted) ? converted[0] : converted;
+          }
+          if (!file || file.type !== "image/jpeg") throw new Error();
+          name = jpegName();
+        } catch {
+          throw new DetectError("unknown", "Không chuyển được ảnh HEIC/HEIF. Hãy chọn ảnh JPEG, PNG hoặc WebP.");
+        }
+      }
       form.append("file", file, name);
     } else {
-      const extension = name.split(".").pop()?.toLowerCase();
-      const mime =
+      let uploadUri = imageUri;
+      let mime =
         image?.mimeType ||
         (
           {
@@ -88,30 +112,60 @@ export async function detectIngredients(
           } as Record<string, string>
         )[extension ?? ""] ||
         "image/jpeg";
+      if (needsJpeg(mime)) {
+        try {
+          const { ImageManipulator, SaveFormat } = await import("expo-image-manipulator");
+          const context = ImageManipulator.manipulate(imageUri);
+          try {
+            const rendered = await context.renderAsync();
+            try {
+              const converted = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.8 });
+              uploadUri = converted.uri;
+            } finally {
+              rendered.release();
+            }
+          } finally {
+            context.release();
+          }
+          name = jpegName();
+          mime = "image/jpeg";
+        } catch {
+          throw new DetectError("unknown", "Không chuyển được ảnh HEIC/HEIF. Hãy chọn ảnh JPEG, PNG hoặc WebP.");
+        }
+      }
       // React Native FormData nhận tệp cục bộ qua URI; kiểu DOM chỉ khai báo Blob.
       form.append("file", {
-        uri: imageUri,
+        uri: uploadUri,
         name,
         type: mime,
       } as unknown as Blob);
     }
-    return await request("/ingredients/detect", schema.ingredients, {
+    return await request("/api/v1/scan-jobs/detect", schema.scanCandidates, {
       method: "POST",
       body: form,
     });
   } catch (error) {
+    if (error instanceof DetectError) throw error;
+    const code = error instanceof ApiError ? error.code : undefined;
     const kind =
-      error instanceof ApiError &&
-      (error.code === "blurry" || error.code === "timeout")
-        ? error.code
-        : "unknown";
+      code === "blurry" || code === "IMAGE_BLURRY"
+        ? "blurry"
+        : code === "timeout" || code === "AI_TIMEOUT"
+          ? "timeout"
+          : "unknown";
+    const messages: Record<string, string> = {
+      AI_RATE_LIMITED: "Dịch vụ nhận diện đang quá tải. Vui lòng thử lại sau.",
+      AI_OUTPUT_INVALID: "AI trả về kết quả không hợp lệ. Vui lòng thử lại.",
+      AI_CONFIG_ERROR: "Dịch vụ nhận diện chưa được cấu hình.",
+      AI_PROVIDER_UNAVAILABLE: "Dịch vụ nhận diện tạm thời không khả dụng.",
+    };
     throw new DetectError(
       kind,
       kind === "blurry"
         ? "Ảnh bị mờ. Hãy chụp lại gần và đủ sáng hơn."
-        : error instanceof Error
-          ? error.message
-          : "Phân tích thất bại.",
+        : kind === "timeout"
+          ? "Nhận diện ảnh quá lâu. Vui lòng thử lại."
+          : (code && messages[code]) || (error instanceof Error ? error.message : "Phân tích thất bại."),
     );
   }
 }
@@ -124,7 +178,7 @@ export async function matchRecipes(
 ): Promise<RecipeMatch[]> {
   if (IS_MOCKING)
     return (await mock()).matchRecipes(inventory, portions, allergies);
-  return request("/recipes/match", schema.matches, {
+  return request("/api/v1/recipes/match", schema.matches, {
     method: "POST",
     body: JSON.stringify({ inventory, portions, allergies }),
     signal,
@@ -135,11 +189,12 @@ export async function generatePlan(
   allergies: string[],
   portions = 2,
   weekStart?: string,
+  inventory: Ingredient[] = [],
 ): Promise<Slots> {
   if (IS_MOCKING) return (await mock()).generatePlan(allergies);
-  const result = await request("/plans/generate", schema.slots, {
+  const result = await request("/api/v1/weekly-plans/generate-from-inventory", schema.slots, {
     method: "POST",
-    body: JSON.stringify({ allergies, portions, weekStart }),
+    body: JSON.stringify({ allergies, portions, weekStart, inventory }),
   });
   if (Object.keys(result).length !== 21)
     throw new ApiError("Máy chủ chưa tạo đủ 21 bữa.");
@@ -153,7 +208,7 @@ export async function buildShopping(
 ): Promise<ShoppingItem[]> {
   if (!plan) return [];
   if (IS_MOCKING) return (await mock()).buildShopping(plan, inventory);
-  return request("/shopping/build", schema.shopping, {
+  return request("/api/v1/weekly-plans/shopping/build", schema.shopping, {
     method: "POST",
     body: JSON.stringify({ plan, inventory }),
     signal,
@@ -165,7 +220,7 @@ export async function getAppData(
   signal?: AbortSignal,
 ): Promise<schema.AppDataResponse> {
   if (IS_MOCKING) return (await mock()).getAppData(userId);
-  return request("/me/data", schema.appDataResponse, { signal });
+  return request("/api/v1/users/me/data", schema.appDataResponse, { signal });
 }
 
 /** Revision và khóa idempotency bảo vệ ghi đồng thời và thử lại sau timeout. */
@@ -178,7 +233,7 @@ export async function saveAppData(
 ): Promise<schema.AppDataResponse> {
   if (!schema.appData(data)) throw new ApiError("Dữ liệu cần lưu chưa hợp lệ.");
   if (IS_MOCKING) return (await mock()).saveAppData(userId, data);
-  return request("/me/data", schema.appDataResponse, {
+  return request("/api/v1/users/me/data", schema.appDataResponse, {
     method: "PUT",
     body: JSON.stringify(data),
     signal,

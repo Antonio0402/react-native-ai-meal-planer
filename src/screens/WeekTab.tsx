@@ -38,8 +38,8 @@ export default function WeekTab({
     retry,
   } = useApiQuery<Recipe[]>(
     useCallback(
-      (signal) => getRecipes(data.allergies, signal),
-      [data.allergies],
+      (signal) => getRecipes(data.allergies, signal, data.inventory),
+      [data.allergies, data.inventory],
     ),
     [],
   );
@@ -60,8 +60,10 @@ export default function WeekTab({
         data.allergies,
         data.portions,
         data.weekStart,
+        data.inventory,
       );
       setData((d) => ({ ...d, slots }));
+      retry();
     } catch (e: any) {
       setError(
         `${e?.message ?? "Không lập được tuần."} Kế hoạch hiện tại được giữ nguyên.`,

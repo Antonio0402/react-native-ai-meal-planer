@@ -10,7 +10,7 @@ import { validExpiry } from "./InventoryTab";
 type Step = "capture" | "analyzing" | "confirm" | "error";
 type ErrInfo = {
   message: string;
-  kind: "blurry" | "timeout" | "unknown" | "permission";
+  kind: "blurry" | "timeout" | "no_food" | "unknown" | "permission";
 };
 
 export default function ScanFlow({
@@ -46,7 +46,13 @@ export default function ScanFlow({
     setError(undefined);
     setStep("analyzing");
     try {
-      setItems(await detectIngredients(imageUri, imageAsset.current));
+      const detected = await detectIngredients(imageUri, imageAsset.current);
+      if (detected.length === 0) {
+        setItems([]);
+        throw new DetectError("no_food", "Không nhận diện được nguyên liệu trong ảnh. Hãy chọn ảnh khác hoặc nhập tay.");
+      }
+      setItems(detected);
+      setShowErrors(false);
       dirty.current = false;
       setStep("confirm");
     } catch (e: any) {
@@ -88,6 +94,7 @@ export default function ScanFlow({
   };
 
   const manual = () => {
+    setShowErrors(false);
     setItems([
       { id: `m${Date.now()}`, name: "", quantity: undefined, unit: "g" },
     ]);
@@ -103,6 +110,8 @@ export default function ScanFlow({
 
   const invalid = (i: Ingredient) =>
     i.quantity === undefined ||
+    !Number.isFinite(i.quantity) ||
+    i.quantity < 0 ||
     !i.name.trim() ||
     !i.unit.trim() ||
     !validExpiry(i.expiry ?? "");
@@ -172,12 +181,12 @@ export default function ScanFlow({
         <View style={{ marginBottom: space.md }}>
           <Pill tone="err" text={error?.message ?? "Có lỗi xảy ra."} />
         </View>
-        {error?.kind !== "blurry" && uri ? (
+        {error?.kind !== "blurry" && error?.kind !== "no_food" && uri ? (
           <Button label="Thử lại" onPress={() => analyze(uri)} />
         ) : null}
         <Button
           label="Chụp lại"
-          variant={error?.kind === "blurry" ? "primary" : "secondary"}
+          variant={error?.kind === "blurry" || error?.kind === "no_food" ? "primary" : "secondary"}
           onPress={takePhoto}
           style={{ marginTop: space.sm }}
         />
@@ -253,7 +262,7 @@ export default function ScanFlow({
                     const n = Number(t.replace(",", "."));
                     update(i.id, {
                       quantity:
-                        t.trim() === "" || isNaN(n) || n < 0 ? undefined : n,
+                        t.trim() === "" || !Number.isFinite(n) || n < 0 ? undefined : n,
                     });
                   }}
                   error={

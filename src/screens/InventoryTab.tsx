@@ -128,8 +128,8 @@ export default function InventoryTab({
       {data.inventory.length === 0 ? (
         <Card>
           <Text style={s.body}>
-            Kho đang trống. Chụp ảnh nguyên liệu để AI nhận diện tên và số
-            lượng.
+            Kho đang trống. Chụp ảnh nguyên liệu để AI nhận diện tên nguyên
+            liệu.
           </Text>
         </Card>
       ) : (

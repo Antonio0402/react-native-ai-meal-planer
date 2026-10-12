@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { Button, Card, Pill, PortionStepper, Sheet, s } from "../components/ui";
 import {
@@ -7,6 +7,7 @@ import {
   MEALS,
   MIN_PORTIONS,
   getRecipes,
+  getSelectedRecipes,
   SLOT_COUNT,
   generatePlan,
   slotKey,
@@ -16,6 +17,15 @@ import { AppData, Recipe } from "../types";
 import { colors, space, font } from "../theme";
 
 import { useApiQuery } from "../hooks/useApiQuery";
+
+const planInputSnapshot = (data: AppData) =>
+  JSON.stringify({
+    inventory: data.inventory,
+    allergies: data.allergies,
+    portions: data.portions,
+    weekStart: data.weekStart,
+    slots: data.slots,
+  });
 
 export default function WeekTab({
   data,
@@ -30,6 +40,12 @@ export default function WeekTab({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string>(); // lỗi lập tuần (đầu trang)
   const [saveError, setSaveError] = useState<string>(); // lỗi lưu (sát nút Lưu)
+  const latestData = useRef(data);
+  useEffect(() => {
+    latestData.current = data;
+  }, [data]);
+  const generatingRef = useRef(false);
+  const editVersion = useRef(0);
 
   const {
     value: pool,
@@ -43,7 +59,18 @@ export default function WeekTab({
     ),
     [],
   );
-  const titleOf = (id?: string) => pool.find((r) => r.id === id)?.title;
+  const selectedIds = [...new Set(Object.values(data.slots))].sort().join("|");
+  const { value: selectedRecipes } = useApiQuery<Recipe[]>(
+    useCallback(
+      (signal) =>
+        getSelectedRecipes(selectedIds ? selectedIds.split("|") : [], signal),
+      [selectedIds],
+    ),
+    [],
+  );
+  const titleOf = (id?: string) =>
+    pool.find((r) => r.id === id)?.title ??
+    selectedRecipes.find((r) => r.id === id)?.title;
 
   const filled = Object.keys(data.slots).length;
   const saved = data.savedPlan;
@@ -53,32 +80,56 @@ export default function WeekTab({
     JSON.stringify(saved.slots) !== JSON.stringify(data.slots);
 
   const autoPlan = async () => {
+    if (generatingRef.current) return;
+    generatingRef.current = true;
+    const source = data;
+    const sourceSnapshot = planInputSnapshot(source);
+    const sourceVersion = editVersion.current;
     setError(undefined);
     setGenerating(true);
     try {
       const slots = await generatePlan(
-        data.allergies,
-        data.portions,
-        data.weekStart,
-        data.inventory,
+        source.allergies,
+        source.portions,
+        source.weekStart,
+        source.inventory,
       );
-      setData((d) => ({ ...d, slots }));
+      const current = latestData.current;
+      if (
+        sourceVersion !== editVersion.current ||
+        planInputSnapshot(current) !== sourceSnapshot
+      ) {
+        setError("Dữ liệu đã thay đổi trong lúc lập tuần. Hãy bấm tạo lại.");
+        return;
+      }
+      setData((d) =>
+        planInputSnapshot(d) === sourceSnapshot ? { ...d, slots } : d,
+      );
       retry();
     } catch (e: any) {
       setError(
         `${e?.message ?? "Không lập được tuần."} Kế hoạch hiện tại được giữ nguyên.`,
       ); // AI lỗi -> giữ plan cũ
     } finally {
+      generatingRef.current = false;
       setGenerating(false);
     }
   };
 
   const save = () => {
-    if (generating) return;
+    if (generatingRef.current) return;
     if (filled === 0) {
       setSaveError(
         'Chưa chọn bữa nào. Hãy chạm vào một ô hoặc bấm "Tự động lập tuần".',
       );
+      return;
+    }
+    if (loadingRecipes || recipeError) {
+      setSaveError("Chưa kiểm tra được công thức hiện tại. Hãy tải lại rồi lưu.");
+      return;
+    }
+    if (Object.values(data.slots).some((id) => !pool.some((r) => r.id === id))) {
+      setSaveError("Có món không còn phù hợp với kho hoặc dị ứng hiện tại. Hãy đổi món hoặc lập lại tuần.");
       return;
     }
     setSaveError(undefined);
@@ -95,6 +146,7 @@ export default function WeekTab({
   };
 
   const setSlot = (d: number, m: number, recipeId?: string) => {
+    editVersion.current++;
     setData((cur) => {
       const slots = { ...cur.slots };
       if (recipeId) slots[slotKey(d, m)] = recipeId;
@@ -117,7 +169,10 @@ export default function WeekTab({
           value={data.portions}
           min={MIN_PORTIONS}
           max={MAX_PORTIONS}
-          onChange={(n) => setData((d) => ({ ...d, portions: n }))}
+          onChange={(n) => {
+            editVersion.current++;
+            setData((d) => ({ ...d, portions: n }));
+          }}
           label="Số người ăn"
         />
         <View
@@ -167,6 +222,12 @@ export default function WeekTab({
       {error ? (
         <View style={{ marginBottom: space.md }}>
           <Pill tone="err" text={error} />
+        </View>
+      ) : null}
+      {!loadingRecipes && !recipeError &&
+      Object.values(data.slots).some((id) => !pool.some((r) => r.id === id)) ? (
+        <View style={{ marginBottom: space.md }}>
+          <Pill tone="warn" text="Có món không còn phù hợp với kho hoặc dị ứng hiện tại. Hãy đổi món trước khi lưu." />
         </View>
       ) : null}
       {filled > 0 && filled < SLOT_COUNT ? (

@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import type { paths } from "./generated/api.types";
 
 // Expo chỉ đưa biến EXPO_PUBLIC_* vào bundle; không đặt bí mật trong các biến này.
 export const IS_MOCKING = process.env.EXPO_PUBLIC_IS_MOCKING === "true";
@@ -21,7 +22,7 @@ export class ApiError extends Error {
 
 /** Backend phải xác minh token Supabase và lấy tài khoản từ token, không từ body. */
 export async function request<T>(
-  path: string,
+  path: keyof paths,
   validate: (value: unknown) => value is T,
   options: RequestInit = {},
 ): Promise<T> {

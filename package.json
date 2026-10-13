@@ -46,7 +46,7 @@
     "setup:schemas": "npm ci --prefix tools/schema-codegen",
     "login:supabase": "node tools/schema-codegen/node_modules/supabase/dist/supabase.js login",
     "verify:supabase": "node scripts/schema-codegen.mjs verify",
-    "generate:database": "node scripts/schema-codegen.mjs database",
+    "snapshot:database": "node scripts/schema-codegen.mjs snapshot",
     "check:database": "node scripts/schema-codegen.mjs check",
     "generate:api": "node scripts/schema-codegen.mjs all",
     "generate:api:offline": "node scripts/schema-codegen.mjs offline",

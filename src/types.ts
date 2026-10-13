@@ -1,56 +1,40 @@
-export type Ingredient = {
-  id: string;
-  name: string;
-  quantity?: number; // undefined = chưa nhập lượng
-  unit: string;
-  expiry?: string; // DD/MM/YYYY, nhập thủ công
-};
+import type { components, paths } from "./services/generated/api.types";
 
-export type RecipeItem = { name: string; quantity: number; unit: string };
-export type MissingItem = RecipeItem & { check?: boolean }; // check = có trong kho nhưng chưa rõ lượng/đơn vị
+/** Validator HTTP hiện tại nhận field tùy chọn vắng mặt, từ chối null. */
+type ClientValue<T> = T extends null
+  ? never
+  : T extends (infer Item)[]
+    ? ClientValue<Item>[]
+    : T extends object
+      ? { [Key in keyof T]: ClientValue<T[Key]> }
+      : T;
 
-export type Recipe = {
-  id: string;
-  title: string;
-  minutes: number;
-  servings: number;
-  items: RecipeItem[];
-  steps: string[];
-};
+type Schemas = components["schemas"];
 
-export type RecipeMatch = {
-  recipe: Recipe;
-  servings: number; // khẩu phần đã quy đổi
-  items: RecipeItem[]; // nguyên liệu theo khẩu phần đã chọn
-  missing: MissingItem[];
-  coverage: number; // 0..1
-};
-
+export type Ingredient = ClientValue<Schemas["Ingredient"]>;
+export type RecipeItem = Schemas["RecipeItem"];
+export type MissingItem = ClientValue<Schemas["MissingItem"]>;
+export type Recipe = Schemas["Recipe"];
+export type RecipeMatch = ClientValue<Schemas["RecipeMatch"]>;
+export type SavedPlan = Schemas["SavedPlan"];
 /** key = `${dayIndex}-${mealIndex}` -> recipeId */
-export type Slots = Record<string, string>;
+export type Slots = SavedPlan["slots"];
+export type ShoppingItem = Schemas["ShoppingItem"];
+export type AppData = ClientValue<Schemas["AppData"]>;
+export type AppDataResponse = ClientValue<Schemas["AppDataResponse"]>;
 
-export type SavedPlan = {
-  weekStart: string;
-  slots: Slots;
-  portions: number;
-  version: number;
-};
+/** Body JSON lấy từ đúng path/method của hợp đồng FastAPI. */
+export type ApiRequest<Path extends keyof paths, Method extends keyof paths[Path]> =
+  NonNullable<paths[Path][Method]> extends {
+    requestBody: { content: { "application/json": infer Body } };
+  } ? Body : never;
 
-export type ShoppingItem = {
-  key: string;
-  name: string;
-  unit: string;
-  toBuy: number;
-  group: string;
-  check: boolean; // thiếu lượng tồn -> cần kiểm tra, không đoán
-};
+/** Response thành công được validator HTTP kiểm tra theo quy ước ClientValue. */
+export type ApiResponse<Path extends keyof paths, Method extends keyof paths[Path]> =
+  NonNullable<paths[Path][Method]> extends {
+    responses: { 200: { content: { "application/json": infer Body } } };
+  } ? ClientValue<Body> : never;
 
-export type AppData = {
-  inventory: Ingredient[];
-  portions: number;
-  allergies: string[];
-  weekStart: string;
-  slots: Slots;
-  savedPlan?: SavedPlan;
-  checked: Record<string, boolean>;
-};
+export type ApiHeaders<Path extends keyof paths, Method extends keyof paths[Path]> =
+  NonNullable<paths[Path][Method]> extends { parameters: { header: infer Headers } }
+    ? Headers : never;

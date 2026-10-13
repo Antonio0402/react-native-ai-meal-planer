@@ -19,7 +19,12 @@ Chế độ mock dùng dữ liệu/thuật toán trong `src/services/mock-api.ts
 
 Mọi endpoint yêu cầu `Authorization: Bearer <Supabase access token>`. Backend xác minh chữ ký, issuer, audience và thời hạn JWT theo dự án Supabase; lấy user ID từ claim `sub`. Không nhận user ID từ client để quyết định quyền truy cập dữ liệu. Các PUT phải giao dịch nguyên tử và chỉ thao tác dữ liệu của tài khoản đó.
 
-JSON dùng camelCase theo `src/types.ts`; các field tùy chọn phải được bỏ khi không có giá trị, không trả `null` (FastAPI: `response_model_exclude_none=True`). Client kiểm tra response qua `src/services/api-schema.ts`. Các endpoint tính toán dưới đây chưa lưu dữ liệu cho tới khi app gửi PUT `/me/data`.
+Type lấy từ route/model Pydantic qua `src/services/generated/api.types.ts`;
+`src/types.ts` chỉ alias model, không khai báo lại field. `api.ts` kiểm tra body, response và header bằng type của endpoint. JSON dùng camelCase cho hợp đồng mobile.
+Client tiếp tục kiểm tra JSON qua `src/services/api-schema.ts` và từ chối `null`
+ở các field tùy chọn. PUT canonical dùng `exclude_none=True`, response dùng
+`response_model_exclude_unset=True` để giữ field vắng mặt; schema wire Pydantic
+vẫn cho phép nullable input. Các endpoint tính toán dưới đây chưa lưu dữ liệu cho tới khi app gửi PUT `/me/data`. Xem `SCHEMA_CODEGEN.md` về sinh type và drift.
 
 | Method | Path | Request | Response thành công |
 | --- | --- | --- | --- |

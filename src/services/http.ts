@@ -6,8 +6,29 @@ export const IS_MOCKING = process.env.EXPO_PUBLIC_IS_MOCKING === "true";
 export const API_URL = (
   process.env.EXPO_PUBLIC_API_URL ?? "http://127.0.0.1:8000"
 ).replace(/\/+$/, "");
-// Đích dev đã được phê duyệt; bổ sung origin triển khai khi backend sẵn sàng.
-const TRUSTED_API_ORIGIN = "http://127.0.0.1:8000";
+
+/** Chỉ cấu hình lúc build được chọn đích nhận token; HTTP giới hạn mạng nội bộ khi dev. */
+function apiOrigin(): URL {
+  let base: URL;
+  try {
+    base = new URL(API_URL);
+  } catch {
+    throw new ApiError("EXPO_PUBLIC_API_URL không hợp lệ.");
+  }
+  const octets = base.hostname.split(".").map(Number);
+  const privateIp = /^\d+\.\d+\.\d+\.\d+$/.test(base.hostname) &&
+    octets.every((part) => part >= 0 && part <= 255) &&
+    (octets[0] === 127 || octets[0] === 10 ||
+      (octets[0] === 192 && octets[1] === 168) ||
+      (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31));
+  const local = privateIp || base.hostname === "localhost" || base.hostname === "[::1]";
+  const devHttp = typeof __DEV__ !== "undefined" && __DEV__ &&
+    base.protocol === "http:" && local;
+  if ((base.protocol !== "https:" && !devHttp) || base.username || base.password ||
+      base.pathname !== "/" || base.search || base.hash)
+    throw new ApiError("Địa chỉ FastAPI phải là HTTPS; khi phát triển có thể dùng HTTP với IP LAN hoặc localhost.");
+  return base;
+}
 
 export class ApiError extends Error {
   constructor(
@@ -26,14 +47,10 @@ export async function request<T>(
   validate: (value: unknown) => value is T,
   options: RequestInit = {},
 ): Promise<T> {
-  let url: URL;
-  try {
-    url = new URL(API_URL + path);
-  } catch {
-    throw new ApiError("EXPO_PUBLIC_API_URL không hợp lệ.");
-  }
-  if (url.origin !== TRUSTED_API_ORIGIN || url.username || url.password)
-    throw new ApiError("Địa chỉ FastAPI chưa được phê duyệt trong http.ts.");
+  const base = apiOrigin();
+  const url = new URL(path, base);
+  if (url.origin !== base.origin || url.username || url.password)
+    throw new ApiError("Yêu cầu không thuộc địa chỉ FastAPI đã cấu hình.");
   if (!supabase) throw new ApiError("Chưa cấu hình Supabase.");
   const { data, error } = await supabase.auth.getSession();
   if (error || !data.session)

@@ -50,6 +50,8 @@ Docs: https://docs.expo.dev/eas/index.md
 
 - `src/services/api.ts` là API bất đồng bộ; mock chỉ bật khi `EXPO_PUBLIC_IS_MOCKING=true`. Không fallback sang mock khi HTTP lỗi.
 - `src/services/http.ts` kiểm tra origin tin cậy, gửi phiên Supabase, timeout và xử lý lỗi; `api-schema.ts` kiểm tra JSON từ backend.
+- Origin tin cậy lấy từ `EXPO_PUBLIC_API_URL` lúc build: HTTPS khi phát hành; HTTP chỉ cho localhost/IP LAN trong dev. Không lấy đích API từ dữ liệu người dùng, không theo redirect khác origin.
+- Công thức AI dùng JSON schema, kiểm tra cache và gộp nguyên liệu trùng ở backend. Lượng kg/l giữ chính xác tới g/ml; `fmtQty` hiển thị tối đa 3 chữ số thập phân. Mã lỗi tạo công thức được dịch tại `api.ts`.
 - `src/services/mock-api.ts` chứa dữ liệu mẫu; `meal-utils.ts` chứa helper thuần; `src/hooks/useApiQuery.ts` hủy request cũ và hỗ trợ retry.
 - `src/state.ts` đọc/lưu tài khoản qua FastAPI, tuần tự hóa PUT và giữ bản nháp AsyncStorage theo tài khoản khi lỗi.
 - Hợp đồng request/response và revision/idempotency nằm trong `FASTAPI_CONTRACT.md`; mẫu cấu hình ở `.env.example`.

@@ -1,5 +1,6 @@
 import type {
   AppData,
+  AppDataResponse,
   Ingredient,
   Recipe,
   RecipeItem,
@@ -118,7 +119,7 @@ const shoppingItem = (v: unknown): v is ShoppingItem =>
   text(v.group) &&
   typeof v.check === "boolean";
 export const shopping = list(shoppingItem);
-export type AppDataResponse = { data: AppData; revision: number };
+export type { AppDataResponse } from "../types";
 export const appDataResponse = (v: unknown): v is AppDataResponse =>
   object(v) &&
   appData(v.data) &&

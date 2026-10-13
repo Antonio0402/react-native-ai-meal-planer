@@ -20,12 +20,14 @@ npm run generate:api
 3. Đọc metadata `public` trong transaction PostgreSQL READ ONLY; kiểm tra các bảng
    snapshot/mutation/recipe mà mobile dùng có column, kiểu, NOT NULL và RLS cần thiết,
    không cấp quyền cho `anon`/`authenticated`/PUBLIC.
-4. Supabase CLI sinh `src/services/generated/database.types.ts` từ `--project-id` và
-   `../fast-api/app/schemas/database_types.py` từ chính `DATABASE_URL` đã xác minh.
-   DSN chỉ truyền trong bộ nhớ tới CLI; không ghi credentials vào artifact/log.
-5. Lưu metadata vào `../fast-api/database.schema.json`. Chạy lại kiểm tra live để
-   đảm bảo database types và snapshot không đổi giữa các lần sinh.
-6. Xuất OpenAPI từ source backend, sinh `src/services/generated/api.types.ts`.
+4. So sánh metadata với `../fast-api/database.schema.json`. Thiếu baseline hoặc có drift thì dừng, không ghi baseline và không sinh lại type để che mất thay đổi.
+5. `scripts.schema_contract api` xuất OpenAPI qua stdout từ route/model Pydantic, openapi-typescript sinh duy nhất `src/services/generated/api.types.ts`. Không giữ bản JSON OpenAPI trung gian hoặc sinh database types không có nơi dùng.
+
+`src/types.ts` chỉ alias các model từ file được sinh. `api.ts` lấy request/response theo path/method và header của PUT từ cùng hợp đồng. `http.ts` chỉ nhận path có trong OpenAPI. Validator runtime ở `api-schema.ts` giữ kiểm tra JSON, finite numbers, unique IDs, slot keys và ngày hợp lệ; type TypeScript không thay thế các kiểm tra này.
+Quy ước client vẫn là field tùy chọn vắng mặt, không phải null; ClientValue chỉ thu hẹp type theo validator đang dùng, không âm thầm chuyển đổi response.
+
+Supabase không sinh kiểu API mobile: app chỉ dùng Supabase Auth và gọi FastAPI.
+CLI được giữ để xác minh quyền vào đúng project; PostgreSQL catalog được dùng cho drift. Các field JSONB và response route thuộc Pydantic, không suy ra từ table types.
 
 Package codegen riêng dùng TypeScript 5 do peer dependency của openapi-typescript;
 app Expo vẫn dùng TypeScript 6. File lock của cả hai package phải được giữ trong Git.
@@ -37,21 +39,21 @@ tiến trình bị dừng đột ngột, chỉ xóa khóa sau khi xác minh khô
 ```powershell
 npm run verify:supabase      # chỉ cấu hình, chưa xác nhận database live
 npm run check:database       # đọc live, fail nếu khác/thiếu artifact; không ghi file
-npm run generate:database    # cập nhật database types/baseline; cần review diff
+npm run snapshot:database    # chấp nhận baseline mới có chủ đích; cần review diff
 npm run generate:api:offline # chỉ hợp đồng FastAPI; không xác nhận database live
 npm run test:schemas
 ```
 
 Baseline lần đầu phản ánh schema remote hiện tại. `check:database` phát hiện thay đổi
 tables/columns/defaults/constraints/indexes/RLS/policies/table grants nhìn thấy bởi
-DB role, generated types và hash file migration. Nó không chứng minh mọi migration
+DB role và hash file migration. Nó không chứng minh mọi migration
 đã chạy, không kiểm tra dữ liệu JSONB hoặc toàn bộ function/trigger/enum/schema khác.
 Guard của các bảng mobile chỉ xác nhận hợp đồng tối thiểu đã mô tả ở bước 3.
 
 Sau thay đổi database có chủ đích, review drift, cập nhật migration/Pydantic/logic
-nếu cần rồi chạy lại generate và review artifact. Không có watcher tự áp dụng DB
+nếu cần, chạy `snapshot:database`, review diff baseline rồi chạy `generate:api`.
+Không có watcher tự áp dụng DB
 hoặc commit. Không chạy migration trên Supabase để kiểm tra codegen.
 
-Frontend runtime còn dùng type/validator hiện tại; chuyển sang API types ở bước 4.
 FastAPI hiện đọc `.env` khi chạy thông thường; nếu dùng `.env.local`, phải khởi động
 backend với `uvicorn --env-file .env.local ...` để runtime dùng cùng cấu hình codegen.

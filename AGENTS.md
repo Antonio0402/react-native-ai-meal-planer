@@ -60,8 +60,9 @@ Docs: https://docs.expo.dev/eas/index.md
 ## Sinh schema
 
 - `tools/schema-codegen/` là package Node riêng, khóa openapi-typescript/TypeScript 5 và Supabase CLI; không đổi TypeScript 6 của Expo app. Cài bằng `npm run setup:schemas`.
-- `npm run generate:api` xác minh project/tenant, đọc metadata PostgreSQL, sinh database types, kiểm tra drift rồi xuất OpenAPI và sinh `src/services/generated/api.types.ts`.
+- `npm run generate:api` xác minh project/tenant, kiểm tra drift metadata PostgreSQL rồi sinh duy nhất `src/services/generated/api.types.ts` từ route/model Pydantic qua OpenAPI stdout.
 - `npm run login:supabase` xác thực CLI trên máy; không dùng publishable/service-role key thay Personal Access Token. Token không thuộc repo hoặc `EXPO_PUBLIC_*`.
-- `npm run check:database` chỉ kiểm tra so với baseline đã lưu; không ghi artifact. `generate:database` cập nhật baseline và cần review diff.
+- `npm run check:database` và `generate:api` không tự ghi đè baseline khi drift. `snapshot:database` chấp nhận baseline mới có chủ đích và cần review diff.
 - `npm run generate:api:offline` chỉ sinh hợp đồng API, không xác nhận database live. Chạy `npm run test:schemas`, lint và typecheck sau đổi công cụ.
-- Database types, metadata snapshot và API types là artifact riêng: JSONB vẫn cần Pydantic. Không sửa artifact thủ công, không tự chạy migration khi codegen.
+- `src/types.ts` alias generated model; `api.ts` dùng type body/response/header theo endpoint; `api-schema.ts` vẫn kiểm tra JSON runtime. ClientValue loại null theo quy ước validator, không chuyển đổi response.
+- Backend chỉ có CLI hợp đồng `scripts.schema_contract` với mode `api` (offline) hoặc `database` (READ ONLY). Không giữ database types không được import hoặc JSON OpenAPI trùng; không tự chạy migration khi codegen.

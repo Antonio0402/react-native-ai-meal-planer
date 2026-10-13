@@ -1,5 +1,5 @@
 /** Sinh schema theo đúng project; các thao tác Supabase chỉ đọc. */
-import { readFile, writeFile, mkdir, mkdtemp, rm, open } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rm, open } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -11,8 +11,6 @@ const backend = path.resolve(frontend, '../fast-api');
 const tooling = path.join(frontend, 'tools/schema-codegen/node_modules');
 const generated = path.join(frontend, 'src/services/generated');
 const snapshotFile = path.join(backend, 'database.schema.json');
-const tsFile = path.join(generated, 'database.types.ts');
-const pyFile = path.join(backend, 'app/schemas/database_types.py');
 const cli = path.join(tooling, 'supabase/dist/supabase.js');
 const python = path.join(backend, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
 
@@ -71,7 +69,7 @@ async function config() {
   return verifyConfig(await readConfig(frontend), await readConfig(backend));
 }
 
-async function databaseArtifacts() {
+async function databaseSnapshot() {
   const { project, databaseUrl } = await config();
   const projects = JSON.parse(run(process.execPath, [cli, 'projects', 'list', '--output', 'json'], process.env,
     'Supabase CLI chưa đăng nhập hoặc không đọc được project. Chạy npm run login:supabase trên máy; không gửi token vào chat.'));
@@ -79,18 +77,12 @@ async function databaseArtifacts() {
   if (!Array.isArray(list) || !list.some(item => item.id === project || item.ref === project))
     throw new Error('Tài khoản CLI không thấy project từ cấu hình.');
   console.log(`Đã xác minh project ${project} và tenant DATABASE_URL.`);
-  const metadata = JSON.parse(run(python, ['-m', 'scripts.inspect_schema'],
+  const metadata = JSON.parse(run(python, ['-m', 'scripts.schema_contract', 'database'],
     { ...process.env, SCHEMA_DATABASE_URL: databaseUrl, PYTHONIOENCODING: 'utf-8' },
     'Không đọc được metadata database. Kiểm tra kết nối PostgreSQL và quyền đọc catalog.'));
   if (metadata.database !== 'postgres') throw new Error('Database thực tế không khớp database đã cấu hình.');
   assertBackendTables(metadata);
-  const ts = run(process.execPath, [cli, 'gen', 'types', '--lang', 'typescript', '--project-id', project, '--schema', 'public']);
-  // Python typegen dùng PostgreSQL trực tiếp; DSN lấy trong bộ nhớ, không ghi file hay log.
-  const py = run(process.execPath, [cli, 'gen', 'types', '--lang', 'python', '--db-url', databaseUrl, '--schema', 'public']);
-  if (!ts.includes('export type Database') && !ts.includes('export interface Database')) throw new Error('CLI không trả về TypeScript Database hợp lệ.');
-  if (!py.includes('BaseModel')) throw new Error('CLI không trả về Python model hợp lệ.');
-  const schema = JSON.stringify({ project_ref: project, ...metadata }, null, 2) + '\n';
-  return { ts: normalize(ts), py: normalize(py), schema };
+  return JSON.stringify({ project_ref: project, ...metadata }, null, 2) + '\n';
 }
 
 export function assertBackendTables(metadata) {
@@ -113,63 +105,48 @@ export function assertBackendTables(metadata) {
 
 export const normalize = value => value.replace(/\r\n/g, '\n').trimEnd() + '\n';
 
-export async function drift(artifacts) {
-  const changed = [];
-  for (const [filename, content] of [[tsFile, artifacts.ts], [pyFile, artifacts.py], [snapshotFile, artifacts.schema]]) {
-    if (!existsSync(filename) || normalize(await readFile(filename, 'utf8')) !== normalize(content))
-      changed.push(path.relative(path.resolve(frontend, '..'), filename));
-  }
-  return changed;
+export async function drift(snapshot) {
+  if (!existsSync(snapshotFile) || normalize(await readFile(snapshotFile, 'utf8')) !== normalize(snapshot))
+    return [path.relative(path.resolve(frontend, '..'), snapshotFile)];
+  return [];
 }
 
-async function generateDatabase() {
-  const artifacts = await databaseArtifacts();
-  const changed = await drift(artifacts);
+async function saveSnapshot() {
+  const snapshot = await databaseSnapshot();
+  const changed = await drift(snapshot);
   if (changed.length) console.log(`Baseline mới hoặc drift cần review: ${changed.join(', ')}`);
-  await mkdir(generated, { recursive: true });
-  await writeFile(tsFile, artifacts.ts, 'utf8');
-  await writeFile(pyFile, artifacts.py, 'utf8');
-  await writeFile(snapshotFile, artifacts.schema, 'utf8');
-  console.log('Đã sinh database types và snapshot metadata. Không chạy migration.');
+  await writeFile(snapshotFile, snapshot, 'utf8');
+  console.log('Đã cập nhật baseline metadata để review. Không chạy migration.');
 }
 
 async function checkDatabase() {
-  const changed = await drift(await databaseArtifacts());
-  if (changed.length) throw new Error(`Schema drift hoặc thiếu baseline: ${changed.join(', ')}. Review trước khi chạy generate:database.`);
-  console.log('Database types và metadata khớp baseline đã lưu.');
+  const changed = await drift(await databaseSnapshot());
+  if (changed.length) throw new Error(`Schema drift hoặc thiếu baseline: ${changed.join(', ')}. Review trước khi chạy snapshot:database.`);
+  console.log('Metadata database khớp baseline đã lưu.');
 }
 
 async function generateAPI() {
   // Xuất lại OpenAPI từ source backend, không phụ thuộc backend đang chạy.
-  const temporary = await mkdtemp(path.join(frontend, '.schema-codegen-'));
-  try {
-    const spec = path.join(temporary, 'openapi.json');
-    run(python, ['-m', 'scripts.export_openapi', '--output', spec]);
-    const { default: openapiTS, astToString } = await import(pathToFileURL(path.join(tooling, 'openapi-typescript/dist/index.mjs')));
-    const source = await readFile(spec, 'utf8');
-    const ast = await openapiTS(JSON.parse(source));
-    await mkdir(generated, { recursive: true });
-    await writeFile(path.join(generated, 'api.types.ts'),
-      '// Được sinh từ FastAPI OpenAPI bằng npm run generate:api:offline; không sửa thủ công.\n' + astToString(ast), 'utf8');
-    await writeFile(path.join(backend, 'openapi.json'), source, 'utf8');
-    console.log('Đã sinh API types từ OpenAPI hiện tại.');
-  } finally {
-    if (!path.resolve(temporary).startsWith(frontend + path.sep)) throw new Error('Thư mục tạm nằm ngoài workspace.');
-    await rm(temporary, { recursive: true, force: true });
-  }
+  const source = run(python, ['-m', 'scripts.schema_contract', 'api']);
+  const { default: openapiTS, astToString } = await import(pathToFileURL(path.join(tooling, 'openapi-typescript/dist/index.mjs')));
+  const ast = await openapiTS(JSON.parse(source));
+  await mkdir(generated, { recursive: true });
+  await writeFile(path.join(generated, 'api.types.ts'),
+    '// Được sinh từ FastAPI OpenAPI bằng npm run generate:api:offline; không sửa thủ công.\n' + astToString(ast), 'utf8');
+  console.log('Đã sinh API types từ response/request models đang gắn trên route.');
 }
 
 async function dispatch(mode) {
   if (mode === 'verify') { const value = await config(); console.log(`Cấu hình cùng project ${value.project}. Chưa kiểm tra quyền CLI/database live.`); }
-  else if (mode === 'database') await generateDatabase();
+  else if (mode === 'snapshot') await saveSnapshot();
   else if (mode === 'check') await checkDatabase();
   else if (mode === 'offline') await generateAPI();
-  else if (mode === 'all') { await generateDatabase(); await checkDatabase(); await generateAPI(); }
-  else throw new Error('Mode phải là verify, database, check, offline hoặc all.');
+  else if (mode === 'all') { await checkDatabase(); await generateAPI(); }
+  else throw new Error('Mode phải là verify, snapshot, check, offline hoặc all.');
 }
 
 export async function main(mode = process.argv[2]) {
-  if (!['database', 'offline', 'all'].includes(mode)) return dispatch(mode);
+  if (!['snapshot', 'offline', 'all'].includes(mode)) return dispatch(mode);
   const lockFile = path.join(frontend, '.schema-codegen.lock');
   let lock;
   try { lock = await open(lockFile, 'wx'); }

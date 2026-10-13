@@ -1,13 +1,12 @@
 import { Platform } from "react-native";
 import type { ImagePickerAsset } from "expo-image-picker";
 import type {
+  ApiHeaders,
+  ApiRequest,
+  ApiResponse,
   AppData,
   Ingredient,
-  Recipe,
-  RecipeMatch,
   SavedPlan,
-  ShoppingItem,
-  Slots,
 } from "../types";
 import { ApiError, IS_MOCKING, request } from "./http";
 import * as schema from "./api-schema";
@@ -42,12 +41,13 @@ export async function getRecipes(
   allergies: string[] = [],
   signal?: AbortSignal,
   inventory: Ingredient[] = [],
-): Promise<Recipe[]> {
+): Promise<ApiResponse<"/api/v1/recipes/generated", "post">> {
   if (IS_MOCKING) return (await mock()).safeRecipes(allergies);
+  const body = { inventory, allergies } satisfies ApiRequest<"/api/v1/recipes/generated", "post">;
   return request(
     "/api/v1/recipes/generated",
     schema.recipes,
-    { method: "POST", body: JSON.stringify({ inventory, allergies }), signal },
+    { method: "POST", body: JSON.stringify(body), signal },
   );
 }
 
@@ -55,13 +55,14 @@ export async function getRecipes(
 export async function getSelectedRecipes(
   ids: string[],
   signal?: AbortSignal,
-): Promise<Recipe[]> {
+): Promise<ApiResponse<"/api/v1/recipes/by-ids", "post">> {
   if (ids.length === 0) return [];
   if (IS_MOCKING)
     return (await mock()).RECIPES.filter((recipe) => ids.includes(recipe.id));
+  const body = { ids } satisfies ApiRequest<"/api/v1/recipes/by-ids", "post">;
   return request("/api/v1/recipes/by-ids", schema.recipes, {
     method: "POST",
-    body: JSON.stringify({ ids }),
+    body: JSON.stringify(body),
     signal,
   });
 }
@@ -70,7 +71,7 @@ export async function getSelectedRecipes(
 export async function detectIngredients(
   imageUri: string,
   image?: Pick<ImagePickerAsset, "file" | "fileName" | "mimeType">,
-): Promise<Ingredient[]> {
+): Promise<ApiResponse<"/api/v1/scan-jobs/detect", "post">> {
   if (IS_MOCKING) {
     try {
       return await (await mock()).detectIngredients(imageUri);
@@ -190,12 +191,13 @@ export async function matchRecipes(
   portions: number,
   allergies: string[],
   signal?: AbortSignal,
-): Promise<RecipeMatch[]> {
+): Promise<ApiResponse<"/api/v1/recipes/match", "post">> {
   if (IS_MOCKING)
     return (await mock()).matchRecipes(inventory, portions, allergies);
+  const body = { inventory, portions, allergies } satisfies ApiRequest<"/api/v1/recipes/match", "post">;
   return request("/api/v1/recipes/match", schema.matches, {
     method: "POST",
-    body: JSON.stringify({ inventory, portions, allergies }),
+    body: JSON.stringify(body),
     signal,
   });
 }
@@ -205,11 +207,12 @@ export async function generatePlan(
   portions = 2,
   weekStart?: string,
   inventory: Ingredient[] = [],
-): Promise<Slots> {
+): Promise<ApiResponse<"/api/v1/weekly-plans/generate-from-inventory", "post">> {
   if (IS_MOCKING) return (await mock()).generatePlan(allergies);
+  const body = { allergies, portions, weekStart, inventory } satisfies ApiRequest<"/api/v1/weekly-plans/generate-from-inventory", "post">;
   const result = await request("/api/v1/weekly-plans/generate-from-inventory", schema.slots, {
     method: "POST",
-    body: JSON.stringify({ allergies, portions, weekStart, inventory }),
+    body: JSON.stringify(body),
   });
   if (Object.keys(result).length !== 21)
     throw new ApiError("Máy chủ chưa tạo đủ 21 bữa.");
@@ -220,12 +223,13 @@ export async function buildShopping(
   plan: SavedPlan | undefined,
   inventory: Ingredient[],
   signal?: AbortSignal,
-): Promise<ShoppingItem[]> {
+): Promise<ApiResponse<"/api/v1/weekly-plans/shopping/build", "post">> {
   if (!plan) return [];
   if (IS_MOCKING) return (await mock()).buildShopping(plan, inventory);
+  const body = { plan, inventory } satisfies ApiRequest<"/api/v1/weekly-plans/shopping/build", "post">;
   return request("/api/v1/weekly-plans/shopping/build", schema.shopping, {
     method: "POST",
-    body: JSON.stringify({ plan, inventory }),
+    body: JSON.stringify(body),
     signal,
   });
 }
@@ -233,7 +237,7 @@ export async function buildShopping(
 export async function getAppData(
   userId: string,
   signal?: AbortSignal,
-): Promise<schema.AppDataResponse> {
+): Promise<ApiResponse<"/api/v1/users/me/data", "get">> {
   if (IS_MOCKING) return (await mock()).getAppData(userId);
   return request("/api/v1/users/me/data", schema.appDataResponse, { signal });
 }
@@ -245,13 +249,15 @@ export async function saveAppData(
   revision: number,
   mutationId: string,
   signal?: AbortSignal,
-): Promise<schema.AppDataResponse> {
+): Promise<ApiResponse<"/api/v1/users/me/data", "put">> {
   if (!schema.appData(data)) throw new ApiError("Dữ liệu cần lưu chưa hợp lệ.");
   if (IS_MOCKING) return (await mock()).saveAppData(userId, data);
+  const body = data satisfies ApiRequest<"/api/v1/users/me/data", "put">;
+  const headers = { "If-Match": `"${revision}"`, "Idempotency-Key": mutationId } satisfies ApiHeaders<"/api/v1/users/me/data", "put">;
   return request("/api/v1/users/me/data", schema.appDataResponse, {
     method: "PUT",
-    body: JSON.stringify(data),
+    body: JSON.stringify(body),
     signal,
-    headers: { "If-Match": `"${revision}"`, "Idempotency-Key": mutationId },
+    headers,
   });
 }

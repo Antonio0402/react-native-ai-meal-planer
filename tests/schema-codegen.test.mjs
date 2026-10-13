@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { verifyConfig, assertBackendTables, normalize, drift } from '../scripts/schema-codegen.mjs';
 
 const project = 'abcdefghijklmnopqrst';
@@ -47,12 +49,7 @@ test('drift phát hiện metadata thay đổi mà không ghi đè baseline', asy
   const before = await readFile(schemaFile, 'utf8');
   const schema = JSON.parse(before);
   schema.columns[0].type = 'simulated-column-change';
-  const artifacts = {
-    ts: await readFile(new URL('../src/services/generated/database.types.ts', import.meta.url), 'utf8'),
-    py: await readFile(new URL('../../fast-api/app/schemas/database_types.py', import.meta.url), 'utf8'),
-    schema: JSON.stringify(schema, null, 2) + '\n',
-  };
-  assert.deepEqual((await drift(artifacts)).map(p => p.replaceAll('\\', '/')), ['fast-api/database.schema.json']);
+  assert.deepEqual((await drift(JSON.stringify(schema, null, 2) + '\n')).map(p => p.replaceAll('\\', '/')), ['fast-api/database.schema.json']);
   assert.equal(await readFile(schemaFile, 'utf8'), before);
 });
 
@@ -65,4 +62,18 @@ test('guard từ chối grant client hoặc đổi nullability của bảng back
   const nullable = structuredClone(schema);
   nullable.columns.find(c => c.table_name === 'app_data_snapshots' && c.name === 'data').not_null = false;
   assert.throws(() => assertBackendTables(nullable), /Column/);
+});
+
+test('generate:api dừng khi kiểm tra project lỗi, không ghi baseline hoặc API types', async () => {
+  const baseline = new URL('../../fast-api/database.schema.json', import.meta.url);
+  const types = new URL('../src/services/generated/api.types.ts', import.meta.url);
+  const before = await Promise.all([readFile(baseline, 'utf8'), readFile(types, 'utf8')]);
+  const result = spawnSync(process.execPath, ['scripts/schema-codegen.mjs', 'all'], {
+    cwd: fileURLToPath(new URL('../', import.meta.url)), encoding: 'utf8', timeout: 10000,
+    env: { ...process.env, EXPO_PUBLIC_SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co',
+      SUPABASE_URL: 'https://zzzzzzzzzzzzzzzzzzzz.supabase.co' },
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /khác nhau/);
+  assert.deepEqual(await Promise.all([readFile(baseline, 'utf8'), readFile(types, 'utf8')]), before);
 });

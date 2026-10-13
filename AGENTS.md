@@ -56,3 +56,12 @@ Docs: https://docs.expo.dev/eas/index.md
 - FastAPI ở `../fast-api` dùng `/api/v1`, lưu snapshot và công thức AI theo tài khoản trong migration `002_app_data.sql`; không seed công thức mẫu khi mock tắt.
 - `npm run test:api` chạy kiểm thử cô lập trong `tests/api.test.cjs`, không gửi token/ảnh thật. Chạy cùng lint và typecheck sau khi đổi hợp đồng API.
 - Scan chuyển HEIC/HEIF sang JPEG trước upload: `expo-image-manipulator` trên native, `heic2any` trên web; chỉ nạp converter khi cần. Backend giữ giới hạn 20 nguyên liệu, lỗi `AI_TIMEOUT`, `AI_RATE_LIMITED`, `AI_OUTPUT_INVALID`; UI không mở xác nhận khi kết quả rỗng và chỉ nhận số lượng hữu hạn không âm.
+
+## Sinh schema
+
+- `tools/schema-codegen/` là package Node riêng, khóa openapi-typescript/TypeScript 5 và Supabase CLI; không đổi TypeScript 6 của Expo app. Cài bằng `npm run setup:schemas`.
+- `npm run generate:api` xác minh project/tenant, đọc metadata PostgreSQL, sinh database types, kiểm tra drift rồi xuất OpenAPI và sinh `src/services/generated/api.types.ts`.
+- `npm run login:supabase` xác thực CLI trên máy; không dùng publishable/service-role key thay Personal Access Token. Token không thuộc repo hoặc `EXPO_PUBLIC_*`.
+- `npm run check:database` chỉ kiểm tra so với baseline đã lưu; không ghi artifact. `generate:database` cập nhật baseline và cần review diff.
+- `npm run generate:api:offline` chỉ sinh hợp đồng API, không xác nhận database live. Chạy `npm run test:schemas`, lint và typecheck sau đổi công cụ.
+- Database types, metadata snapshot và API types là artifact riêng: JSONB vẫn cần Pydantic. Không sửa artifact thủ công, không tự chạy migration khi codegen.

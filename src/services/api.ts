@@ -51,6 +51,21 @@ export async function getRecipes(
   );
 }
 
+/** Tải tên các món đã chọn, kể cả khi kho hiện tại tạo ra bộ công thức mới. */
+export async function getSelectedRecipes(
+  ids: string[],
+  signal?: AbortSignal,
+): Promise<Recipe[]> {
+  if (ids.length === 0) return [];
+  if (IS_MOCKING)
+    return (await mock()).RECIPES.filter((recipe) => ids.includes(recipe.id));
+  return request("/api/v1/recipes/by-ids", schema.recipes, {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+    signal,
+  });
+}
+
 /** Gửi tệp ảnh thật bằng multipart, không gửi URI cục bộ cho backend. */
 export async function detectIngredients(
   imageUri: string,

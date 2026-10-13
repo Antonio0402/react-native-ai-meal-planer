@@ -27,6 +27,7 @@ JSON dùng camelCase theo `src/types.ts`; các field tùy chọn phải được
 | POST | `/api/v1/scan-jobs/detect` | Multipart, field `file` chứa tệp ảnh | `Ingredient[]` để người dùng xác nhận |
 | POST | `/api/v1/recipes/match` | `{ inventory, portions, allergies }` | `RecipeMatch[]` |
 | POST | `/api/v1/weekly-plans/generate-from-inventory` | `{ inventory, allergies, portions, weekStart? }` | `Slots` đủ 21 bữa |
+| POST | `/api/v1/recipes/by-ids` | `{ ids: UUID[] }` (tối đa 21) | Công thức của chính tài khoản theo các ID đã chọn; `[]` nếu không tìm thấy |
 | POST | `/api/v1/weekly-plans/shopping/build` | `{ plan, inventory }` | `ShoppingItem[]` |
 | GET | `/api/v1/users/me/data` | Không body | `{ data: AppData, revision: number }` |
 | PUT | `/api/v1/users/me/data` | Body `AppData`; header `If-Match` và `Idempotency-Key` | `{ data: AppData, revision: number }` |

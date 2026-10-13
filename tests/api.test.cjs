@@ -182,6 +182,26 @@ test('lập tuần thiếu bữa và response trạng thái sai đều bị từ
   assert.equal(schema.ingredients([ingredient, ingredient]), false);
 });
 
+test('lịch tuần dùng Gemini và tải tên món cũ theo tài khoản', async () => {
+  const id = 'ebf5ca40-89f3-4113-8488-514eb6c59827';
+  const slots = Object.fromEntries(Array.from({ length: 21 }, (_, i) => [`${Math.floor(i / 3)}-${i % 3}`, id]));
+  const recipe = { id, title: 'Canh rau', minutes: 20, servings: 2, items: [{ name: 'Rau', quantity: 1, unit: 'bó' }], steps: ['Nấu rau'] };
+  const env = environment({ fetch: url => json(url.endsWith('/by-ids') ? [recipe] : slots) });
+  const api = env.load('src/services/api.ts');
+  assert.equal(Object.keys(await api.generatePlan([], 2, currentWeek, [ingredient])).length, 21);
+  assert.equal((await api.getSelectedRecipes([id]))[0].title, 'Canh rau');
+  assert(env.calls[0][0].endsWith('/weekly-plans/generate-from-inventory'));
+  assert.deepEqual(JSON.parse(env.calls[1][1].body), { ids: [id] });
+});
+
+for (const [code, status] of [['AI_TIMEOUT', 504], ['AI_RATE_LIMITED', 429], ['AI_OUTPUT_INVALID', 502]]) {
+  test('lập tuần giữ mã lỗi Gemini: ' + code, async () => {
+    const env = environment({ fetch: () => json({ detail: { code, message: 'private' } }, status) });
+    await assert.rejects(env.load('src/services/api.ts').generatePlan([]), error =>
+      error.code === code && !error.message.includes('private'));
+  });
+}
+
 test('state tải trước khi ghi; PUT tuần tự giữ thay đổi mới và revision', async () => {
   const saves = [], deferred = [];
   const env = environment({ api: { ApiError: class extends Error {}, getAppData: async () => ({ data: base(), revision: 0 }), saveAppData: (...args) => new Promise(resolve => { saves.push(args); deferred.push(resolve); }) } });
@@ -313,6 +333,42 @@ function element(tree, type, predicate) {
   if (tree.type === type && predicate(tree.props)) return tree;
   return element(tree.props?.children, type, predicate);
 }
+
+test('WeekTab giữ chỉnh sửa mới và chặn lưu món không còn trong bộ công thức', async () => {
+  const currentId = 'ebf5ca40-89f3-4113-8488-514eb6c59827';
+  const oldId = '140b6f92-39ca-4d11-8fad-0652eb45a369';
+  const recipe = id => ({ id, title: 'Canh rau', minutes: 20, servings: 2,
+    items: [{ name: 'Rau', quantity: 1, unit: 'bó' }], steps: ['Nấu rau'] });
+  let completePlan, saved = 0;
+  const env = environment({ fetch: url => {
+    if (url.endsWith('/recipes/generated')) return json([recipe(currentId)]);
+    if (url.endsWith('/recipes/by-ids')) return json([recipe(oldId)]);
+    if (url.endsWith('/generate-from-inventory')) return new Promise(resolve => { completePlan = resolve; });
+    throw Error('Unexpected endpoint');
+  } });
+  let data = { ...base(), inventory: [ingredient], slots: { '0-0': oldId } };
+  let runner;
+  const setData = update => {
+    data = typeof update === 'function' ? update(data) : update;
+    runner.schedule();
+  };
+  const WeekTab = env.load('src/screens/WeekTab.tsx').default;
+  runner = env.hook(() => WeekTab({ data, setData, onSaved: () => { saved++; } }));
+  await settle();
+  element(runner.value, 'Button', p => p.label === 'Lưu & tạo đi chợ').props.onPress();
+  await settle(); assert.equal(saved, 0);
+  assert(element(runner.value, 'Pill', p => p.text.includes('không còn phù hợp')));
+
+  const generating = element(runner.value, 'Button', p => p.label === 'Tự động lập tuần').props.onPress();
+  await settle();
+  data = { ...data, slots: { '0-0': currentId } }; runner.render();
+  completePlan(json(Object.fromEntries(Array.from({ length: 21 }, (_, i) =>
+    [`${Math.floor(i / 3)}-${i % 3}`, currentId]))));
+  await generating; await settle();
+  assert.deepEqual(plain(data.slots), { '0-0': currentId });
+  assert(element(runner.value, 'Pill', p => p.text.includes('Dữ liệu đã thay đổi')));
+  runner.dispose();
+});
 
 test('ScanFlow kết quả rỗng hiện lỗi và đường nhập tay', async () => {
   const env = environment({ fetch: () => json([]) });

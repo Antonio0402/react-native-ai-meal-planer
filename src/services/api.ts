@@ -37,6 +37,25 @@ export class DetectError extends Error {
 /** Chỉ nạp dữ liệu mẫu khi cờ môi trường bật; lỗi mạng không được thay bằng mẫu. */
 const mock = () => import("./mock-api");
 
+/** Chỉ hiển thị thông báo đã biết, không đưa lỗi nội bộ của provider ra UI. */
+function recipeError(error: unknown): never {
+  if (error instanceof ApiError) {
+    const messages: Record<string, string> = {
+      AI_TIMEOUT: "Tạo công thức quá lâu. Vui lòng thử lại.",
+      timeout: "Tải công thức quá lâu. Vui lòng thử lại.",
+      AI_RATE_LIMITED: "Dịch vụ tạo công thức đang quá tải. Vui lòng thử lại sau.",
+      AI_OUTPUT_INVALID: "AI trả về công thức không hợp lệ. Vui lòng thử lại.",
+      AI_CONFIG_ERROR: "Dịch vụ tạo công thức chưa được cấu hình.",
+      AI_PROVIDER_UNAVAILABLE: "Dịch vụ tạo công thức tạm thời không khả dụng.",
+      NO_SAFE_INGREDIENTS: "Chưa có nguyên liệu phù hợp với dị ứng đã chọn. Hãy kiểm tra lại kho và thông tin dị ứng.",
+      RECIPE_INVALID: "Công thức cũ không hợp lệ. Hãy chọn món mới trong tab Công thức.",
+    };
+    if (error.code && messages[error.code])
+      throw new ApiError(messages[error.code], error.status, error.code);
+  }
+  throw error;
+}
+
 export async function getRecipes(
   allergies: string[] = [],
   signal?: AbortSignal,
@@ -48,7 +67,7 @@ export async function getRecipes(
     "/api/v1/recipes/generated",
     schema.recipes,
     { method: "POST", body: JSON.stringify(body), signal },
-  );
+  ).catch(recipeError);
 }
 
 /** Tải tên các món đã chọn, kể cả khi kho hiện tại tạo ra bộ công thức mới. */
@@ -64,7 +83,7 @@ export async function getSelectedRecipes(
     method: "POST",
     body: JSON.stringify(body),
     signal,
-  });
+  }).catch(recipeError);
 }
 
 /** Gửi tệp ảnh thật bằng multipart, không gửi URI cục bộ cho backend. */
@@ -199,7 +218,7 @@ export async function matchRecipes(
     method: "POST",
     body: JSON.stringify(body),
     signal,
-  });
+  }).catch(recipeError);
 }
 
 export async function generatePlan(
@@ -210,10 +229,26 @@ export async function generatePlan(
 ): Promise<ApiResponse<"/api/v1/weekly-plans/generate-from-inventory", "post">> {
   if (IS_MOCKING) return (await mock()).generatePlan(allergies);
   const body = { allergies, portions, weekStart, inventory } satisfies ApiRequest<"/api/v1/weekly-plans/generate-from-inventory", "post">;
-  const result = await request("/api/v1/weekly-plans/generate-from-inventory", schema.slots, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+  let result: ApiResponse<"/api/v1/weekly-plans/generate-from-inventory", "post">;
+  try {
+    result = await request("/api/v1/weekly-plans/generate-from-inventory", schema.slots, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      const messages: Record<string, string> = {
+        AI_TIMEOUT: "Lập thực đơn quá lâu. Vui lòng thử lại.",
+        AI_RATE_LIMITED: "Dịch vụ lập thực đơn đang quá tải. Vui lòng thử lại sau.",
+        AI_OUTPUT_INVALID: "AI trả về thực đơn không hợp lệ. Vui lòng thử lại.",
+        AI_CONFIG_ERROR: "Dịch vụ lập thực đơn chưa được cấu hình.",
+        AI_PROVIDER_UNAVAILABLE: "Dịch vụ lập thực đơn tạm thời không khả dụng.",
+      };
+      if (error.code && messages[error.code])
+        throw new ApiError(messages[error.code], error.status, error.code);
+    }
+    throw error;
+  }
   if (Object.keys(result).length !== 21)
     throw new ApiError("Máy chủ chưa tạo đủ 21 bữa.");
   return result;

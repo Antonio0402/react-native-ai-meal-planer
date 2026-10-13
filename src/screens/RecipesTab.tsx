@@ -103,8 +103,8 @@ export default function RecipesTab({
       {data.inventory.length === 0 && (
         <Card>
           <Text style={s.body}>
-            Chưa có nguyên liệu nào, nên mọi món đều đang thiếu. Chụp ảnh hoặc
-            nhập tay để có gợi ý chính xác.
+            Chưa có nguyên liệu để tạo công thức. Chụp ảnh hoặc nhập tay để nhận
+            gợi ý món ăn từ kho của bạn.
           </Text>
           <Button
             label="Chụp nguyên liệu"

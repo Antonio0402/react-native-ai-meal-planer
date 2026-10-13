@@ -11,7 +11,7 @@ EXPO_PUBLIC_API_URL=http://127.0.0.1:8000
 
 `IS_MOCKING` được xuất từ `src/services/api.ts`. Chỉ chuỗi `true` bật mock; thiếu biến, `false`, `1` hoặc `TRUE` đều dùng FastAPI. Sau khi đổi `.env.local`, reload app. Cờ và URL là dữ liệu công khai, không đặt API key AI vào biến `EXPO_PUBLIC_*`.
 
-`src/services/http.ts` chỉ cho phép origin dev đã chọn: `http://127.0.0.1:8000`. Khi có backend triển khai, cập nhật `TRUSTED_API_ORIGIN` và URL tới đúng server tin cậy. Không dùng `127.0.0.1` cho điện thoại thật: địa chỉ đó trỏ tới chính điện thoại. Backend production cần HTTPS.
+`src/services/http.ts` lấy origin tin cậy từ `EXPO_PUBLIC_API_URL` lúc build. Bản phát hành yêu cầu HTTPS. Khi dev, có thể dùng HTTP với localhost hoặc IP LAN; Android emulator dùng `10.0.2.2`, điện thoại thật dùng IP LAN của máy chạy backend. Không dùng `127.0.0.1` cho điện thoại thật: địa chỉ đó trỏ tới chính điện thoại. URL không được chứa credentials, path, query hay fragment. Mọi request phải giữ cùng origin và không theo redirect. Khởi động lại Expo khi đổi URL.
 
 Chế độ mock dùng dữ liệu/thuật toán trong `src/services/mock-api.ts` và AsyncStorage theo tài khoản. Không tự chuyển sang mock khi lỗi mạng. Helper ngày/tuần, đơn vị, định dạng và nhãn UI trong `meal-utils.ts` không cần HTTP.
 
@@ -24,7 +24,7 @@ Type lấy từ route/model Pydantic qua `src/services/generated/api.types.ts`;
 Client tiếp tục kiểm tra JSON qua `src/services/api-schema.ts` và từ chối `null`
 ở các field tùy chọn. PUT canonical dùng `exclude_none=True`, response dùng
 `response_model_exclude_unset=True` để giữ field vắng mặt; schema wire Pydantic
-vẫn cho phép nullable input. Các endpoint tính toán dưới đây chưa lưu dữ liệu cho tới khi app gửi PUT `/me/data`. Xem `SCHEMA_CODEGEN.md` về sinh type và drift.
+vẫn cho phép nullable input. Endpoint tạo/gợi ý công thức lưu cache AI theo tài khoản; snapshot kho và kế hoạch được lưu khi app gửi PUT `/me/data`. Xem `SCHEMA_CODEGEN.md` về sinh type và drift.
 
 | Method | Path | Request | Response thành công |
 | --- | --- | --- | --- |
@@ -41,6 +41,8 @@ Response là array/object trực tiếp, không thêm wrapper `items` hay `succe
 
 - `Ingredient`: `{ id, name, unit, quantity?, expiry? }`. `quantity` chưa rõ thì bỏ field; không tự đoán lượng từ ảnh. `expiry` theo `DD/MM/YYYY` nếu có. ID phải duy nhất trong kho.
 - `Recipe`: `{ id, title, minutes, servings, items: RecipeItem[], steps: string[] }`. `RecipeItem`: `{ name, quantity, unit }`; lượng dương, đơn vị không rỗng.
+- Gemini nhận JSON schema giới hạn 1–5 món, yêu cầu tiếng Việt và chỉ dùng nguyên liệu/đơn vị tương thích với kho. Backend từ chối chuỗi rỗng sau trim, lượng không hữu hạn và gộp nguyên liệu trùng trước khi tính tồn. Cache được validate lại; cache lỗi được loại khỏi lần gợi ý sau, giữ ID cũ cho kế hoạch đã lưu.
+- Lượng được quy đổi sang g/ml hoặc đơn vị đếm trước khi làm tròn lên. Khi hiển thị kg/l, giữ chính xác tới g/ml. `AI_*`, `NO_SAFE_INGREDIENTS` và `RECIPE_INVALID` được dịch thành thông báo an toàn tại client.
 - `RecipeMatch`: `{ recipe, servings, items, missing, coverage }`. `missing` là `RecipeItem[]` kèm `check?: boolean`; `coverage` trong `[0,1]`. Sắp xếp coverage giảm dần. Chỉ dùng kho đã xác nhận, loại món không an toàn theo dị ứng; thành phần không rõ không được coi là an toàn.
 - `Slots`: object có key `dayIndex-mealIndex`, ngày `0..6`, bữa `0..2`; value là ID công thức AI đã lưu cho tài khoản. Lập tuần trả đủ 21 key, không tham chiếu món mẫu.
 - `SavedPlan`: `{ weekStart, slots, portions, version }`, `weekStart` theo `YYYY-MM-DD`, `version` nguyên dương. Khẩu phần trong `1..12`.

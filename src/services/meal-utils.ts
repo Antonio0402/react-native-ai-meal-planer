@@ -37,7 +37,7 @@ export const unitFactor = (unit: string) =>
 /** Làm tròn lên cho đồ đếm / g / ml (mua đủ); 1 chữ số thập phân cho kg / l. */
 export const roundUp = (q: number, unit: string) =>
   unitFactor(unit) === 1 ? Math.ceil(q - 1e-9) : Math.round(q * 10) / 10;
-export const fmtQty = (q: number) => String(Math.round(q * 10) / 10);
+export const fmtQty = (q: number) => String(Math.round(q * 1000) / 1000);
 
 export function weekStartISO(date: Date = new Date()): string {
   const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());

@@ -58,7 +58,7 @@ const recipe = (v: unknown): v is Recipe =>
   object(v) &&
   text(v.id) &&
   text(v.title) &&
-  number(v.minutes) &&
+  number(v.minutes) && Number.isInteger(v.minutes) && v.minutes > 0 && v.minutes <= 240 &&
   portions(v.servings) &&
   list(recipeItem)(v.items) &&
   v.items.length > 0 &&

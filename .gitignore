@@ -42,3 +42,6 @@ yarn-error.*
 
 # APK build output (publish via GitHub Releases)
 build/
+.schema-codegen-*/
+.schema-codegen.lock
+supabase/.temp/

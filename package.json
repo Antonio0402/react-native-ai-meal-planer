@@ -42,7 +42,15 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test:api": "node --test tests/api.test.cjs"
+    "test:api": "node --test tests/api.test.cjs",
+    "setup:schemas": "npm ci --prefix tools/schema-codegen",
+    "login:supabase": "node tools/schema-codegen/node_modules/supabase/dist/supabase.js login",
+    "verify:supabase": "node scripts/schema-codegen.mjs verify",
+    "generate:database": "node scripts/schema-codegen.mjs database",
+    "check:database": "node scripts/schema-codegen.mjs check",
+    "generate:api": "node scripts/schema-codegen.mjs all",
+    "generate:api:offline": "node scripts/schema-codegen.mjs offline",
+    "test:schemas": "node --test tests/schema-codegen.test.mjs"
   },
   "private": true
 }

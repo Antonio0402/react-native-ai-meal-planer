@@ -77,7 +77,7 @@ function environment({ mocking, platform = 'web', apiUrl, fetch: fetchImpl, api,
         } },
       };
       if (name === 'expo-image-picker') return { launchImageLibraryAsync: async () => ({ canceled: false, assets: [{ uri: 'blob:fixture', file: new File(['fixture'], 'photo.jpg', { type: 'image/jpeg' }) }] }) };
-      if (name === '../components/ui') return { Button: 'Button', Card: 'Card', Field: 'Field', Pill: 'Pill', ConfirmDialog: 'ConfirmDialog', PortionStepper: 'PortionStepper', Sheet: 'Sheet', Chip: 'Chip', Skeleton: 'Skeleton', s: {} };
+      if (name === '../components/ui' || name === './ui') return { Button: 'Button', Card: 'Card', Field: 'Field', Pill: 'Pill', ConfirmDialog: 'ConfirmDialog', PortionStepper: 'PortionStepper', Sheet: 'Sheet', Chip: 'Chip', Skeleton: 'Skeleton', s: {} };
       if (name === './InventoryTab') return { validExpiry: value => !value };
       if (name === 'expo-crypto') return { randomUUID };
       if (name === '@react-native-async-storage/async-storage') return {
@@ -489,3 +489,36 @@ test('ScanFlow từ chối số lượng vô hạn, NaN, âm; vẫn nhận số 
   element(runner.value, 'Button', p => p.label === 'Xác nhận & lưu vào kho').props.onPress();
   assert.equal(saved[0][0].quantity, 1.5); runner.dispose();
 });
+
+test('AllergyEditor thêm/bỏ dị ứng, chuẩn hóa chữ thường và giới hạn ký tự', async () => {
+  const env = environment();
+  const AllergyEditor = env.load('src/components/AllergyEditor.tsx').default;
+  let current = ['trứng'];
+  const runner = env.hook(() => AllergyEditor({ value: current, onChange: v => { current = v; } }));
+  // Bấm chip đã chọn để bỏ
+  element(runner.value, 'Chip', p => p.label.includes('trứng')).props.onPress();
+  assert.deepEqual(plain(current), []);
+  current = [];
+  runner.render();
+  // Bấm chip chưa chọn để thêm
+  element(runner.value, 'Chip', p => p.label.includes('sữa')).props.onPress();
+  assert.deepEqual(plain(current), ['sữa']);
+  current = ['sữa'];
+  runner.render();
+  // Nhập tự do có dấu và khoảng trắng
+  element(runner.value, 'Field', p => p.label === 'Thêm dị ứng khác').props.onChangeText('  Hải sản  ');
+  await settle();
+  element(runner.value, 'Button', p => p.label === 'Thêm dị ứng').props.onPress();
+  assert.deepEqual(plain(current), ['sữa', 'hải sản']);
+  runner.dispose();
+});
+
+test('mock isRecipeSafe loại đúng món khi nhập dị ứng cụ thể', async () => {
+  const env = environment({ mocking: 'true' });
+  const mockApi = env.load('src/services/mock-api.ts');
+  const safe = mockApi.safeRecipes(['tôm']);
+  assert(safe.every(r => !r.items.some(i => i.name.toLowerCase().includes('tôm'))));
+  const noEgg = mockApi.safeRecipes(['Trứng']);
+  assert(noEgg.every(r => !r.items.some(i => i.name.toLowerCase().includes('trứng'))));
+});
+

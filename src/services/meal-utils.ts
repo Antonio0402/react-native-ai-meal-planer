@@ -8,6 +8,24 @@ export const slotKey = (d: number, m: number) => `${d}-${m}`;
 export const MIN_PORTIONS = 1;
 export const MAX_PORTIONS = 12;
 
+/** Giới hạn khớp với `AllergyList` ở FastAPI. */
+export const MAX_ALLERGIES = 20;
+export const MAX_ALLERGY_LENGTH = 50;
+/** Nhóm dị ứng phổ biến; backend mở rộng thành các nguyên liệu liên quan. */
+export const COMMON_ALLERGIES = [
+  "trứng",
+  "sữa",
+  "gluten",
+  "đậu nành",
+  "đậu phộng",
+  "hải sản",
+  "cá",
+  "mè",
+];
+/** NFC + chữ thường + gộp khoảng trắng; giữ dấu để phân biệt "cá" và "cà". */
+export const normalizeAllergy = (s: string) =>
+  s.normalize("NFC").toLowerCase().split(/\s+/).filter(Boolean).join(" ");
+
 const UNIT_ALIAS: Record<string, string> = {
   gram: "g",
   gr: "g",

@@ -86,6 +86,11 @@ export default function RecipesTab({
           onChange={(n) => setData((d) => ({ ...d, portions: n }))}
           label="Khẩu phần nấu"
         />
+        <Text style={[s.muted, { marginTop: space.sm }]}>
+          {data.allergies.length
+            ? `Đang tránh: ${data.allergies.join(", ")}. Sửa ở tab Kho.`
+            : "Chưa khai báo dị ứng. Thêm ở tab Kho nếu cần."}
+        </Text>
       </Card>
 
       {notice ? (

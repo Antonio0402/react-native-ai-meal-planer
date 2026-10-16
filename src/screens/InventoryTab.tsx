@@ -10,6 +10,7 @@ import {
   Sheet,
   s,
 } from "../components/ui";
+import AllergyEditor from "../components/AllergyEditor";
 import { MAX_PORTIONS, MIN_PORTIONS } from "../services/api";
 import { AppData, Ingredient } from "../types";
 import { colors, space, font } from "../theme";
@@ -122,6 +123,10 @@ export default function InventoryTab({
             Chưa có dữ liệu. Chụp ảnh nguyên liệu để AI nhận diện.
           </Text>
         )}
+        <AllergyEditor
+          value={data.allergies}
+          onChange={(allergies) => setData((d) => ({ ...d, allergies }))}
+        />
       </Card>
 
       <Text style={[s.muted, { marginVertical: space.md }]}>Kho của bạn</Text>

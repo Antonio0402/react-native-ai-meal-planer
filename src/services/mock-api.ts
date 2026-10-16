@@ -221,10 +221,14 @@ const needsCheck = (e: StockEntry | undefined, dim: string) =>
 /** Món an toàn: không chứa dị ứng; thành phần không rõ -> loại khi người dùng có khai báo dị ứng. */
 export function isRecipeSafe(recipe: Recipe, allergies: string[]): boolean {
   if (allergies.length === 0) return true;
+  const normalized = allergies.map(norm);
   return recipe.items.every((it) => {
-    const info = ING_INFO[norm(it.name)];
+    const itemName = norm(it.name);
+    const info = ING_INFO[itemName];
     if (!info) return false;
-    return !(info.allergen && allergies.includes(info.allergen));
+    const allergen = info.allergen ? norm(info.allergen) : undefined;
+    const matched = normalized.includes(itemName) || (allergen && normalized.includes(allergen));
+    return !matched;
   });
 }
 export const safeRecipes = (allergies: string[]) =>

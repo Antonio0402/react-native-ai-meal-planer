@@ -1,17 +1,69 @@
+import Constants from "expo-constants";
+import { Platform } from "react-native";
 import { supabase } from "./supabase";
 import type { paths } from "./generated/api.types";
 
 // Expo chỉ đưa biến EXPO_PUBLIC_* vào bundle; không đặt bí mật trong các biến này.
 export const IS_MOCKING = process.env.EXPO_PUBLIC_IS_MOCKING === "true";
-export const API_URL = (
-  process.env.EXPO_PUBLIC_API_URL ?? "http://127.0.0.1:8000"
-).replace(/\/+$/, "");
+
+/** Lấy host IP của máy tính phát triển từ Expo Constants khi chạy trên thiết bị di động / Expo Go. */
+export function getDevServerHost(): string | null {
+  const constants: any = (Constants as any)?.default ?? Constants;
+  const hostUri = constants?.expoConfig?.hostUri;
+  if (hostUri) {
+    const host = hostUri.split(":")[0];
+    if (host) return host;
+  }
+  const manifest2Any = constants?.manifest2 as { extra?: { expoGo?: { debuggerHost?: string } } } | null;
+  const debuggerHost =
+    manifest2Any?.extra?.expoGo?.debuggerHost ??
+    (constants as { manifest?: { debuggerHost?: string } })?.manifest?.debuggerHost;
+  if (debuggerHost) {
+    const host = debuggerHost.split(":")[0];
+    if (host) return host;
+  }
+  if (constants?.experienceUrl) {
+    try {
+      const url = new URL(constants.experienceUrl);
+      if (url.hostname) return url.hostname;
+    } catch {}
+  }
+  return null;
+}
+
+/** Tự động ánh xạ 127.0.0.1 / localhost sang IP máy chủ dev hoặc Android emulator loopback khi chạy dev trên thiết bị thật / giả lập. */
+export function resolveApiUrl(rawUrl?: string): string {
+  const raw = (rawUrl ?? process.env.EXPO_PUBLIC_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  let base: URL;
+  try {
+    base = new URL(raw);
+  } catch {
+    return raw;
+  }
+
+  const isDev = typeof __DEV__ !== "undefined" && __DEV__;
+  if (isDev && Platform.OS !== "web") {
+    const isLoopback = base.hostname === "127.0.0.1" || base.hostname === "localhost" || base.hostname === "[::1]";
+    if (isLoopback) {
+      const devHost = getDevServerHost();
+      if (devHost && devHost !== "127.0.0.1" && devHost !== "localhost") {
+        base.hostname = devHost;
+      } else if (Platform.OS === "android") {
+        base.hostname = "10.0.2.2";
+      }
+    }
+  }
+
+  return base.toString().replace(/\/+$/, "");
+}
+
+export const API_URL = resolveApiUrl();
 
 /** Chỉ cấu hình lúc build được chọn đích nhận token; HTTP giới hạn mạng nội bộ khi dev. */
 function apiOrigin(): URL {
   let base: URL;
   try {
-    base = new URL(API_URL);
+    base = new URL(resolveApiUrl());
   } catch {
     throw new ApiError("EXPO_PUBLIC_API_URL không hợp lệ.");
   }
@@ -20,7 +72,8 @@ function apiOrigin(): URL {
     octets.every((part) => part >= 0 && part <= 255) &&
     (octets[0] === 127 || octets[0] === 10 ||
       (octets[0] === 192 && octets[1] === 168) ||
-      (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31));
+      (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+      (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127));
   const local = privateIp || base.hostname === "localhost" || base.hostname === "[::1]";
   const devHttp = typeof __DEV__ !== "undefined" && __DEV__ &&
     base.protocol === "http:" && local;

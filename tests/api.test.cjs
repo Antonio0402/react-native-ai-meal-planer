@@ -7,7 +7,7 @@ const ts = require('typescript');
 const { randomUUID } = require('node:crypto');
 
 // Thực thi source thật với fetch/session/storage giả lập; không gọi mạng thật.
-function environment({ mocking, platform = 'web', apiUrl, fetch: fetchImpl, api, fastTimeout = false, conversionFails = false, dev = true } = {}) {
+function environment({ mocking, platform = 'web', apiUrl, fetch: fetchImpl, api, fastTimeout = false, conversionFails = false, dev = true, hostUri } = {}) {
   const cache = new Map(), storage = new Map(), calls = [];
   const conversions = [];
   let session = { access_token: 'fixture-token' };
@@ -86,6 +86,10 @@ function environment({ mocking, platform = 'web', apiUrl, fetch: fetchImpl, api,
         removeItem: async key => { storage.delete(key); },
       };
       if (name === './supabase') return { supabase: { auth: { getSession: async () => ({ data: { session }, error: null }) } } };
+      if (name === 'expo-constants') {
+        const mock = { expoConfig: hostUri ? { hostUri } : null, manifest2: null, manifest: null, experienceUrl: null };
+        return { ...mock, default: mock };
+      }
       if (name.startsWith('.')) return load(path.resolve(path.dirname(filename), name + '.ts'));
       throw Error('Unexpected dependency: ' + name);
     };
@@ -188,6 +192,24 @@ test('origin lúc build hỗ trợ LAN dev, HTTPS production và chặn đổi o
   const env = environment();
   await assert.rejects(env.load('src/services/http.ts').request('https://other.invalid/api', () => true), /không thuộc/);
   assert.equal(env.calls.length, 0);
+});
+
+test('native dev tự động ánh xạ 127.0.0.1 sang Metro hostUri hoặc 10.0.2.2 trên Android', async () => {
+  const expoGo = environment({ platform: 'ios', hostUri: '192.168.1.100:8081', fetch: () => json([]) });
+  await expoGo.load('src/services/api.ts').getRecipes();
+  assert.equal(expoGo.calls[0][0], 'http://192.168.1.100:8000/api/v1/recipes/generated');
+
+  const android = environment({ platform: 'android', fetch: () => json([]) });
+  await android.load('src/services/api.ts').getRecipes();
+  assert.equal(android.calls[0][0], 'http://10.0.2.2:8000/api/v1/recipes/generated');
+
+  const web = environment({ platform: 'web', hostUri: '192.168.1.100:8081', fetch: () => json([]) });
+  await web.load('src/services/api.ts').getRecipes();
+  assert.equal(web.calls[0][0], 'http://127.0.0.1:8000/api/v1/recipes/generated');
+
+  const cgnat = environment({ apiUrl: 'http://100.64.0.15:8000', fetch: () => json([]) });
+  await cgnat.load('src/services/api.ts').getRecipes();
+  assert.equal(cgnat.calls[0][0], 'http://100.64.0.15:8000/api/v1/recipes/generated');
 });
 
 for (const [code, status, message] of [

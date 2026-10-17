@@ -42,8 +42,8 @@ function AppShell() {
         <Text style={[s.h2, { color: colors.primary }]}>FRESHPLAN</Text>
         <Pressable
           onPress={signOut}
-          disabled={saving || !!syncError || !ready}
-          accessibilityState={{ disabled: saving || !!syncError || !ready }}
+          disabled={saving}
+          accessibilityState={{ disabled: saving }}
           accessibilityRole="button"
           accessibilityLabel="Đăng xuất"
           style={{

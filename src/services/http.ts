@@ -14,10 +14,13 @@ export function getDevServerHost(): string | null {
     const host = hostUri.split(":")[0];
     if (host) return host;
   }
-  const manifest2Any = constants?.manifest2 as { extra?: { expoGo?: { debuggerHost?: string } } } | null;
+  const manifest2Any = constants?.manifest2 as {
+    extra?: { expoGo?: { debuggerHost?: string } };
+  } | null;
   const debuggerHost =
     manifest2Any?.extra?.expoGo?.debuggerHost ??
-    (constants as { manifest?: { debuggerHost?: string } })?.manifest?.debuggerHost;
+    (constants as { manifest?: { debuggerHost?: string } })?.manifest
+      ?.debuggerHost;
   if (debuggerHost) {
     const host = debuggerHost.split(":")[0];
     if (host) return host;
@@ -33,7 +36,11 @@ export function getDevServerHost(): string | null {
 
 /** Tự động ánh xạ 127.0.0.1 / localhost sang IP máy chủ dev hoặc Android emulator loopback khi chạy dev trên thiết bị thật / giả lập. */
 export function resolveApiUrl(rawUrl?: string): string {
-  const raw = (rawUrl ?? process.env.EXPO_PUBLIC_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  const raw = (
+    rawUrl ??
+    process.env.EXPO_PUBLIC_API_URL ??
+    "http://127.0.0.1:8000"
+  ).replace(/\/+$/, "");
   let base: URL;
   try {
     base = new URL(raw);
@@ -43,7 +50,10 @@ export function resolveApiUrl(rawUrl?: string): string {
 
   const isDev = typeof __DEV__ !== "undefined" && __DEV__;
   if (isDev && Platform.OS !== "web") {
-    const isLoopback = base.hostname === "127.0.0.1" || base.hostname === "localhost" || base.hostname === "[::1]";
+    const isLoopback =
+      base.hostname === "127.0.0.1" ||
+      base.hostname === "localhost" ||
+      base.hostname === "[::1]";
     if (isLoopback) {
       const devHost = getDevServerHost();
       if (devHost && devHost !== "127.0.0.1" && devHost !== "localhost") {
@@ -68,18 +78,42 @@ function apiOrigin(): URL {
     throw new ApiError("EXPO_PUBLIC_API_URL không hợp lệ.");
   }
   const octets = base.hostname.split(".").map(Number);
-  const privateIp = /^\d+\.\d+\.\d+\.\d+$/.test(base.hostname) &&
+  const privateIp =
+    /^\d+\.\d+\.\d+\.\d+$/.test(base.hostname) &&
     octets.every((part) => part >= 0 && part <= 255) &&
-    (octets[0] === 127 || octets[0] === 10 ||
+    (octets[0] === 127 ||
+      octets[0] === 10 ||
       (octets[0] === 192 && octets[1] === 168) ||
       (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
       (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127));
-  const local = privateIp || base.hostname === "localhost" || base.hostname === "[::1]";
-  const devHttp = typeof __DEV__ !== "undefined" && __DEV__ &&
-    base.protocol === "http:" && local;
-  if ((base.protocol !== "https:" && !devHttp) || base.username || base.password ||
-      base.pathname !== "/" || base.search || base.hash)
-    throw new ApiError("Địa chỉ FastAPI phải là HTTPS; khi phát triển có thể dùng HTTP với IP LAN hoặc localhost.");
+  const local =
+    privateIp || base.hostname === "localhost" || base.hostname === "[::1]";
+  const devHttp =
+    typeof __DEV__ !== "undefined" &&
+    __DEV__ &&
+    base.protocol === "http:" &&
+    local;
+  if (
+    (base.protocol !== "https:" && !devHttp) ||
+    base.username ||
+    base.password ||
+    base.pathname !== "/" ||
+    base.search ||
+    base.hash
+  )
+    throw new ApiError(
+      "Địa chỉ FastAPI phải là HTTPS; khi phát triển có thể dùng HTTP với IP LAN hoặc localhost.",
+    );
+  if (
+    typeof __DEV__ !== "undefined" &&
+    __DEV__ &&
+    Platform.OS !== "web" &&
+    (base.hostname === "127.0.0.1" || base.hostname === "localhost")
+  ) {
+    console.warn(
+      "[FreshPlan HTTP] Đang dùng 127.0.0.1/localhost trên thiết bị thật. Thiết bị thật không thể kết nối tới localhost của máy tính. Hãy đặt IP mạng LAN (ví dụ http://192.168.0.213:8000) hoặc EXPO_PUBLIC_IS_MOCKING=true trong .env.local.",
+    );
+  }
   return base;
 }
 

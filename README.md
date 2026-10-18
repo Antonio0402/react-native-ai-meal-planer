@@ -1,94 +1,96 @@
-# FreshPlan
+# FreshPlan Mobile & Web Frontend
 
-Ứng dụng gợi ý món ăn và lập danh sách đi chợ từ nguyên liệu trong bếp.
-Luồng chính: chụp / chọn ảnh nguyên liệu → nhận diện → xác nhận → gợi ý công thức → lập thực đơn tuần → danh sách đi chợ.
+Ứng dụng gợi ý món ăn, lập thực đơn tuần và tạo danh sách đi chợ thông minh từ nguyên liệu trong bếp.
+Luồng chính: **Chụp / chọn ảnh nguyên liệu → AI nhận diện → Xác nhận kho & dị ứng → Gợi ý công thức → Lập thực đơn 21 bữa/tuần → Danh sách đi chợ tự động**.
 
-- Công nghệ: Expo SDK 57, React Native 0.86, TypeScript. Chạy trên web và Android.
-- Phiên bản: v2.1 (package `com.freshplan.app`).
-- **Lưu ý:** đây là bản demo frontend. Nhận diện nguyên liệu đang là **mock** (luôn trả Cà chua 300g, Trứng 4 quả, Sữa 500ml), chưa có backend. Dữ liệu lưu cục bộ bằng AsyncStorage.
+- **Công nghệ**: Expo SDK 57, React Native 0.86, Expo Router, TypeScript, Supabase Auth.
+- **Nền tảng**: Android, iOS (Expo Go / Dev Build) và Web.
+- **Chế độ hoạt động**:
+  - **Live Mode** (`EXPO_PUBLIC_IS_MOCKING=false`): Kết nối trực tiếp với FastAPI backend (`../fast-api`), xác thực qua Supabase JWT, nhận diện ảnh và sinh công thức bằng Google Gemini AI, đồng bộ dữ liệu kho/thực đơn vào PostgreSQL kèm cơ chế dự phòng nháp cục bộ (AsyncStorage).
+  - **Mock Mode** (`EXPO_PUBLIC_IS_MOCKING=true`): Chạy độc lập hoàn toàn với dữ liệu và thuật toán mẫu tại `src/services/mock-api.ts`.
 
-## Đăng nhập demo
+## Tài khoản đăng nhập chế độ Mock (`EXPO_PUBLIC_IS_MOCKING=true`)
 
 | Email | Mật khẩu |
 |---|---|
 | `admin@freshplan.local` | `admin123` |
 
+*(Ở chế độ Live, đăng ký hoặc đăng nhập bằng tài khoản Supabase Auth thực tế).*
+
 ## Cấu trúc thư mục
 
-```
-Source_code/
-├─ src/                 Mã nguồn (screens, services, theme, ...)
-├─ assets/              Icon, splash
-├─ App.tsx, index.ts    Điểm vào của app
-├─ app.json             Cấu hình Expo
+```text
+fresh-plan/
+├─ src/
+│  ├─ app/              Expo Router routes & layouts ((app)/(tabs), login, scan)
+│  ├─ components/       UI components dùng chung (Button, Card, AllergyEditor, ...)
+│  ├─ hooks/            Custom hooks (useApiQuery với quản lý AbortController)
+│  ├─ providers/        AuthProvider (Supabase session) & AppDataProvider
+│  ├─ screens/          Giao diện các màn hình chính (Inventory, Recipes, Week, Shopping, ScanFlow)
+│  ├─ services/         Giao tiếp HTTP, kiểm tra schema runtime, đồng bộ OpenAPI types
+│  ├─ state.ts          Quản lý trạng thái kho, thực đơn, hàng đợi đồng bộ PUT tuần tự
+│  ├─ theme.ts          Bảng màu, khoảng cách và cấu hình font Lora / Inter
+│  └─ types.ts          Type aliases nối trực tiếp với OpenAPI schema từ backend
+├─ assets/              Icon, splash screen
+├─ scripts/             Script sinh mã OpenAPI & kiểm tra hợp đồng dữ liệu
+├─ tests/               Bộ kiểm thử tích hợp API & state (node:test)
+├─ FASTAPI_CONTRACT.md  Tài liệu chi tiết hợp đồng giao tiếp với FastAPI backend
+├─ SCHEMA_CODEGEN.md    Hướng dẫn đồng bộ kiểu dữ liệu từ backend sang frontend
 └─ package.json
 ```
 
-Thư mục `android/` và file APK **không** nằm trong repo. `android/` được sinh ra bằng `npx expo prebuild` (xem phần build bên dưới).
+## Thiết lập môi trường
 
-## Yêu cầu để build
-
-- Node.js 20 trở lên và npm
-- JDK 17
-- Android SDK (platform + build-tools + NDK, Android Studio cài sẵn là đủ)
-
-## Chạy bản web (dev)
-
-```
-npm install
-npx expo start --web
-```
-
-## Build APK release (Android)
-
-1. Cài thư viện và sinh dự án Android native:
-   ```
+1. Cài đặt thư viện:
+   ```bash
    npm install
-   npx expo prebuild --platform android
    ```
-2. Tạo file `android/local.properties` trỏ tới Android SDK:
+2. Sao chép `.env.example` sang `.env.local` và điền thông tin:
+   ```dotenv
+   EXPO_PUBLIC_IS_MOCKING=false
+   EXPO_PUBLIC_API_URL=http://127.0.0.1:8000
+   EXPO_PUBLIC_SUPABASE_URL=<your-supabase-project-url>
+   EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<your-supabase-anon-or-publishable-key>
    ```
-   sdk.dir=C:/androidsdk
-   ```
-   (Đường dẫn dùng dấu `/`.)
-3. Build (PowerShell):
-   ```
-   cd android
-   $env:ANDROID_HOME="C:\androidsdk"
-   .\gradlew.bat assembleRelease --no-daemon
-   ```
-4. APK nằm ở `android\app\build\outputs\apk\release\app-release.apk`.
+   - Khi chạy với thiết bị thật qua Expo Go trên cùng mạng Wi-Fi, app tự động suy luận địa chỉ IP LAN của máy phát triển nếu `EXPO_PUBLIC_API_URL` đặt là `http://127.0.0.1:8000`.
+   - Với máy ảo Android Emulator, hệ thống tự động ánh xạ sang `http://10.0.2.2:8000`.
 
-> **Lỗi linker C++ khi build:** xảy ra nếu đường dẫn Android SDK có dấu cách (ví dụ `C:\Users\Thinkpad T14\AppData\...`).
-> Cách sửa: tạo junction không có dấu cách rồi dùng nó cho `sdk.dir` và `ANDROID_HOME`:
-> ```
-> New-Item -ItemType Junction -Path C:\androidsdk -Target "<đường dẫn SDK thật>"
-> ```
+## Chạy ứng dụng (Development)
 
-APK release ký bằng debug keystore mặc định, chỉ dùng để thử nghiệm.
+```bash
+# Khởi chạy Metro Bundler (quét QR bằng Expo Go trên điện thoại)
+npx expo start
 
-## Chạy trên giả lập / thiết bị qua Expo
+# Chạy trực tiếp trên trình duyệt Web
+npx expo start --web
 
-```
+# Chạy trên máy ảo / thiết bị Android
 npx expo run:android
 ```
-(cần thiết bị hoặc giả lập đang kết nối, kiểm tra bằng `adb devices`).
 
-## Kiểm tra mã
+## Kiểm tra mã nguồn & Kiểm thử
 
-```
+```bash
+# Kiểm tra kiểu TypeScript
 npx tsc --noEmit
+
+# Kiểm tra ESLint
 npx expo lint
+
+# Chạy bộ kiểm thử hợp đồng API & đồng bộ trạng thái (32 test cases)
+npm run test:api
 ```
 
-## Nối backend thật (chưa làm)
+## Build APK Release (Android)
 
-Trong `src/services/api.ts` đổi `USE_MOCK=false` và đặt `API_URL`. Backend cần có job polling `GET /v1/jobs/{id}`.
-
-## Việc còn lại
-
-- Sửa so khớp tên nguyên liệu không phân biệt dấu ("Ca chua" ≠ "Cà chua").
-- Backend FastAPI + model nhận diện thật, Supabase Auth, lưu dữ liệu vào DB.
-- Keystore release riêng nếu muốn phát hành (hiện dùng debug keystore).
-
-Chi tiết tiến độ xem `TRACKING.md` ở thư mục `Project/` (bên ngoài `Source_code/`).
+1. Sinh thư mục native `android/`:
+   ```bash
+   npx expo prebuild --platform android
+   ```
+2. Đảm bảo đã cấu hình `ANDROID_HOME` hoặc `android/local.properties` trỏ tới Android SDK.
+3. Thực hiện build:
+   ```bash
+   cd android
+   ./gradlew assembleRelease --no-daemon
+   ```
+   File APK kết quả nằm tại `android/app/build/outputs/apk/release/app-release.apk`.

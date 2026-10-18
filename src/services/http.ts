@@ -150,7 +150,7 @@ export async function request<T>(
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, 60000);
+  }, 90000);
   try {
     const headers = new Headers(options.headers);
     headers.set("Accept", "application/json");

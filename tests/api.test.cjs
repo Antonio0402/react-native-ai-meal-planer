@@ -44,7 +44,7 @@ function environment({ mocking, platform = 'web', apiUrl, fetch: fetchImpl, api,
       fields = new Map(); append(key, value) { this.fields.set(key, value); } get(key) { return this.fields.get(key); }
     }, Blob, File, AbortController,
     process: { env: { EXPO_PUBLIC_IS_MOCKING: mocking, EXPO_PUBLIC_API_URL: apiUrl } },
-    setTimeout: (fn, ms) => setTimeout(fn, ms === 1800 || ms === 1200 || (fastTimeout && ms === 60000) ? 0 : ms), clearTimeout,
+    setTimeout: (fn, ms) => setTimeout(fn, ms === 1800 || ms === 1200 || (fastTimeout && (ms === 60000 || ms === 90000)) ? 0 : ms), clearTimeout,
     fetch: async (...args) => { calls.push(args); if (!fetchImpl) throw Error('Unexpected HTTP'); return fetchImpl(...args); },
   });
   function load(filename) {
@@ -317,10 +317,13 @@ test('state khôi phục draft cùng revision và chặn draft xung đột', asy
   const restored = same.hook(() => same.load('src/state.ts').useAppData('alice')); await settle(); assert.equal(restored.value.data.portions, 3); assert.equal(saves, 1); assert.equal(same.storage.has('freshplan.draft.alice'), false); restored.dispose();
 });
 test('native chuyển HEIC sang JPEG trước khi upload', async () => {
-  const env = environment({ platform: 'ios', fetch: () => json([ingredient]) });
+  const env = environment({ platform: 'ios', fetch: url => url === 'file:///converted.jpg' ? { arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer } : json([ingredient]) });
   await env.load('src/services/api.ts').detectIngredients('file:///photo.heic', { fileName: 'photo.heic', mimeType: 'image/heic' });
   const [, options] = env.calls[0];
-  assert.deepEqual(plain(options.body.get('file')), { uri: 'file:///converted.jpg', name: 'photo.jpg', type: 'image/jpeg' });
+  const filePart = options.body.get('file');
+  assert.deepEqual(plain(filePart), { uri: 'file:///converted.jpg', name: 'photo.jpg', type: 'image/jpeg' });
+  assert.equal(typeof filePart.bytes, 'function');
+  assert.deepEqual(Array.from(await filePart.bytes()), [1, 2, 3]);
   assert.deepEqual(plain(env.conversions), [{ uri: 'file:///photo.heic' }, { format: 'jpeg', compress: 0.8 }]);
   assert.equal(options.headers.get('Content-Type'), null);
 });

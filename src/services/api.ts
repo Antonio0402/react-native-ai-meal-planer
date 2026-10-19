@@ -168,12 +168,15 @@ export async function detectIngredients(
           throw new DetectError("unknown", "Không chuyển được ảnh HEIC/HEIF. Hãy chọn ảnh JPEG, PNG hoặc WebP.");
         }
       }
-      // React Native FormData nhận tệp cục bộ qua URI; kiểu DOM chỉ khai báo Blob.
-      form.append("file", {
-        uri: uploadUri,
-        name,
-        type: mime,
-      } as unknown as Blob);
+      // React Native FormData nhận tệp cục bộ qua URI; expo/fetch đọc nội dung qua bytes().
+      const part = { uri: uploadUri, name, type: mime };
+      Object.defineProperty(part, "bytes", {
+        value: async () => {
+          const res = await fetch(uploadUri);
+          return new Uint8Array(await res.arrayBuffer());
+        },
+      });
+      form.append("file", part as unknown as Blob);
     }
     return await request("/api/v1/scan-jobs/detect", schema.scanCandidates, {
       method: "POST",

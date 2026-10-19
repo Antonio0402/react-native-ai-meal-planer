@@ -111,7 +111,7 @@ function apiOrigin(): URL {
     (base.hostname === "127.0.0.1" || base.hostname === "localhost")
   ) {
     console.warn(
-      "[FreshPlan HTTP] Đang dùng 127.0.0.1/localhost trên thiết bị thật. Thiết bị thật không thể kết nối tới localhost của máy tính. Hãy đặt IP mạng LAN (ví dụ http://192.168.0.213:8000) hoặc EXPO_PUBLIC_IS_MOCKING=true trong .env.local.",
+      "[FreshPlan HTTP] Đang dùng 127.0.0.1/localhost trên thiết bị thật. Thiết bị thật không thể kết nối tới localhost của máy tính. Hãy đặt IP mạng LAN (ví dụ http://192.168.1.X:8000) hoặc EXPO_PUBLIC_IS_MOCKING=true trong .env.local.",
     );
   }
   return base;
